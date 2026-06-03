@@ -1,0 +1,13 @@
+{
+  "name": "jobapplier",
+  "version": "1.0.0",
+  "description": "Firefox extension to auto-fill job applications",
+  "scripts": {
+    "dev": "web-ext run --source-dir . --firefox-profile dev-profile",
+    "lint": "web-ext lint --source-dir .",
+    "build": "web-ext build --source-dir . --artifacts-dir ./dist"
+  },
+  "devDependencies": {
+    "web-ext": "^8.0.0"
+  }
+}
