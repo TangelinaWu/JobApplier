@@ -59,7 +59,21 @@
     floatingButton.mount({
       onStart: () => handler.run(profile, onUnknown),
       onPause: () => handler.pause(),
+      idleLabel: handler.idleLabel || null,
     });
+
+    // Auto-apply: if the auto-matcher opened this tab, fill the form automatically
+    if (!window.location.hostname.includes('linkedin.com')) {
+      chrome.storage.local.get('pendingAutoApply', ({ pendingAutoApply }) => {
+        if (!pendingAutoApply) return
+        const jobInfo = pendingAutoApply
+        chrome.storage.local.remove('pendingAutoApply')
+        chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_FILLING, payload: jobInfo }).catch(() => {})
+        Promise.resolve(handler.run(profile, onUnknown)).then(() => {
+          chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_COMPLETE, payload: jobInfo }).catch(() => {})
+        })
+      })
+    }
   }
 
   // Re-initialize on SPA navigation

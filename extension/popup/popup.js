@@ -21,9 +21,9 @@ async function init() {
 
   // Query current fill status from the active content script
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
-      const response = await browser.tabs.sendMessage(tab.id, { type: MSG.GET_STATUS }).catch(() => null);
+      const response = await chrome.tabs.sendMessage(tab.id, { type: MSG.GET_STATUS }).catch(() => null);
       if (response) updateStatus(response.status || "idle");
     }
   } catch {
@@ -58,14 +58,14 @@ function escapeHtml(s) {
 }
 
 // Listen for status updates forwarded from background
-browser.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === MSG.FILL_STATUS && msg.payload) {
     updateStatus(msg.payload.status);
   }
 });
 
 document.getElementById("openOptions").addEventListener("click", () => {
-  browser.runtime.openOptionsPage();
+  chrome.runtime.openOptionsPage();
 });
 
 init();

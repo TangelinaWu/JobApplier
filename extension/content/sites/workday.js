@@ -108,7 +108,7 @@ window.__jaHandler = {
       "[data-automation-id='orgName'], .company-name"
     )?.textContent.trim() || "";
 
-    browser.runtime.sendMessage({
+    chrome.runtime.sendMessage({
       type: MSG.LOG_APPLICATION,
       payload: {
         site: "workday",

@@ -1,13 +1,12 @@
 {
   "name": "jobapplier",
   "version": "1.0.0",
-  "description": "Firefox extension to auto-fill job applications",
+  "description": "Desktop app that launches Chromium with a pre-loaded job application auto-filler extension",
+  "main": "electron-main.js",
   "scripts": {
-    "dev": "web-ext run --source-dir . --firefox-profile dev-profile",
-    "lint": "web-ext lint --source-dir .",
-    "build": "web-ext build --source-dir . --artifacts-dir ./dist"
+    "start": "electron ."
   },
   "devDependencies": {
-    "web-ext": "^8.0.0"
+    "electron": "^42.3.3"
   }
 }

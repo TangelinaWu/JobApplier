@@ -65,6 +65,7 @@ const floatingButton = (() => {
   let _isPaused = false;
   let onStartCb = null;
   let onPauseCb = null;
+  let idleLabel = null;
 
   function init() {
     if (host) return;
@@ -95,7 +96,7 @@ const floatingButton = (() => {
 
     const label = document.createElement("span");
     const labels = {
-      [STATES.IDLE]:    "Auto Apply",
+      [STATES.IDLE]:    idleLabel || "Auto Apply",
       [STATES.RUNNING]: "Pause",
       [STATES.PAUSED]:  "Resume",
       [STATES.DONE]:    "Applied!",
@@ -142,9 +143,10 @@ const floatingButton = (() => {
     }
   }
 
-  function mount({ onStart, onPause }) {
+  function mount({ onStart, onPause, idleLabel: label }) {
     onStartCb = onStart;
     onPauseCb = onPause;
+    idleLabel = label || null;
     init();
     render(STATES.IDLE);
   }
