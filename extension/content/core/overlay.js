@@ -312,7 +312,7 @@ const overlayManager = (() => {
       // Ask Claude via background script
       let suggestion = "";
       try {
-        const response = await browser.runtime.sendMessage({
+        const response = await chrome.runtime.sendMessage({
           type: MSG.ASK_CLAUDE,
           payload: { question, fieldContext },
         });

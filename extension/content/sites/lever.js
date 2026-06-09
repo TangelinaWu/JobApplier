@@ -89,7 +89,7 @@ window.__jaHandler = {
 
   _logApplication(profile) {
     const jobTitle = document.title.replace(" - Lever", "").trim();
-    browser.runtime.sendMessage({
+    chrome.runtime.sendMessage({
       type: MSG.LOG_APPLICATION,
       payload: {
         site: "lever",

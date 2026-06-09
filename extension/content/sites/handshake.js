@@ -93,7 +93,7 @@ window.__jaHandler = {
   _logApplication() {
     const role = document.querySelector("h1, .job-title")?.textContent.trim() || document.title;
     const company = document.querySelector(".company-name, .employer-name")?.textContent.trim() || "";
-    browser.runtime.sendMessage({
+    chrome.runtime.sendMessage({
       type: MSG.LOG_APPLICATION,
       payload: {
         site: "handshake",

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>JobApplier Control</title>
+  <link rel="stylesheet" href="control.css" />
+</head>
+<body>
+  <div id="header">
+    <span class="dot" id="status-dot"></span>
+    <span id="status-text">Ready</span>
+  </div>
+
+  <div id="counters">
+    <span id="counter-analyzed">0 analyzed</span>
+    <span id="counter-matches">0 matches</span>
+  </div>
+
+  <div id="current-job" title=""></div>
+  <div id="step-detail"></div>
+
+  <div id="controls">
+    <button id="btn-start">▶ Start</button>
+    <button id="btn-pause" disabled>⏸ Pause</button>
+    <button id="btn-stop"  disabled>■ Stop</button>
+  </div>
+
+  <div id="results"></div>
+
+  <div id="log-section">
+    <div id="log-header">
+      <span>Activity</span>
+      <button id="btn-clear-log">clear</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <script src="../shared/profileSchema.js"></script>
+  <script src="../shared/messaging.js"></script>
+  <script src="../shared/storage.js"></script>
+  <script src="control.js"></script>
+</body>
+</html>

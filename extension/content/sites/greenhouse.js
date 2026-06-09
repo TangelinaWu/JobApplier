@@ -103,7 +103,7 @@ window.__jaHandler = {
   _logApplication(profile) {
     const meta = document.querySelector("meta[property='og:title']");
     const role = meta ? meta.content : document.title;
-    browser.runtime.sendMessage({
+    chrome.runtime.sendMessage({
       type: MSG.LOG_APPLICATION,
       payload: {
         site: "greenhouse",

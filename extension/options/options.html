@@ -237,6 +237,51 @@
     <!-- Claude AI Settings -->
     <section>
       <h2>Claude AI Settings</h2>
+      <!-- Credentials for auto-matching -->
+      <div class="form-grid">
+        <div class="field">
+          <label for="gpa">GPA</label>
+          <input type="text" id="gpa" name="gpa" placeholder="3.8" />
+        </div>
+        <div class="field full-width">
+          <label for="targetRoles">Target Roles <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="targetRoles" name="targetRoles" placeholder="Software Engineer Intern, SWE Intern, ML Intern" />
+        </div>
+        <div class="field full-width">
+          <label for="preferredIndustries">Preferred Industries <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="preferredIndustries" name="preferredIndustries" placeholder="Tech, Finance, Healthcare" />
+        </div>
+        <div class="field full-width">
+          <label for="relevantCoursework">Relevant Coursework <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="relevantCoursework" name="relevantCoursework" placeholder="Data Structures, Algorithms, Machine Learning, OS" />
+        </div>
+        <div class="field full-width">
+          <label for="certifications">Certifications <span class="hint">(comma-separated)</span></label>
+          <input type="text" id="certifications" name="certifications" placeholder="AWS Cloud Practitioner, Google Data Analytics" />
+        </div>
+        <div class="field full-width">
+          <label for="workExperience">Work Experience</label>
+          <textarea id="workExperience" name="workExperience" rows="5" placeholder="Company · Title · Jun 2024 – Aug 2024&#10;• Built X using Python and React&#10;• Improved Y by Z%"></textarea>
+        </div>
+        <div class="field full-width">
+          <label for="projects">Projects</label>
+          <textarea id="projects" name="projects" rows="4" placeholder="Project Name — React, Node.js, PostgreSQL&#10;Brief description of what you built and impact"></textarea>
+        </div>
+      </div>
+
+      <!-- LinkedIn auto-login credentials -->
+      <div class="form-grid">
+        <div class="field full-width">
+          <label for="linkedinEmail">LinkedIn Email (for auto-login)</label>
+          <input type="email" id="linkedinEmail" name="linkedinEmail" placeholder="you@gmail.com" />
+        </div>
+        <div class="field full-width">
+          <label for="linkedinPassword">LinkedIn Password (for auto-login)</label>
+          <input type="password" id="linkedinPassword" name="linkedinPassword" placeholder="Your LinkedIn password" />
+          <p class="hint">Stored locally on this device only.</p>
+        </div>
+      </div>
+
       <p class="hint">Your API key is stored locally on this device only and is never sent anywhere except directly to Anthropic.</p>
       <div class="field">
         <label for="claudeApiKey">Anthropic API Key</label>

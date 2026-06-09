@@ -9,7 +9,8 @@
     "storage",
     "activeTab",
     "tabs",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://claude.ai/*"
   ],
 
   "browser_action": {
@@ -21,11 +22,35 @@
   },
 
   "background": {
-    "scripts": ["background/background.js"],
+    "scripts": [
+      "shared/profileSchema.js",
+      "shared/messaging.js",
+      "shared/storage.js",
+      "background/background.js"
+    ],
     "persistent": true
   },
 
   "content_scripts": [
+    {
+      "matches": ["*://claude.ai/*"],
+      "js": [
+        "shared/profileSchema.js",
+        "shared/messaging.js",
+        "shared/storage.js",
+        "content/sites/claude.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://www.linkedin.com/login*",
+        "*://www.linkedin.com/uas/login*",
+        "*://www.linkedin.com/checkpoint/lg/login*"
+      ],
+      "js": ["content/sites/linkedin-login.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": [
         "*://www.linkedin.com/jobs/*",
@@ -34,11 +59,13 @@
       "js": [
         "shared/profileSchema.js",
         "shared/messaging.js",
+        "shared/storage.js",
         "content/core/humanDelay.js",
         "content/core/formFiller.js",
         "content/core/overlay.js",
         "content/core/floatingButton.js",
         "content/core/detector.js",
+        "content/core/autoMatcher.js",
         "content/sites/linkedin.js",
         "content/main.js"
       ],
@@ -52,6 +79,7 @@
       "js": [
         "shared/profileSchema.js",
         "shared/messaging.js",
+        "shared/storage.js",
         "content/core/humanDelay.js",
         "content/core/formFiller.js",
         "content/core/overlay.js",
@@ -71,6 +99,7 @@
       "js": [
         "shared/profileSchema.js",
         "shared/messaging.js",
+        "shared/storage.js",
         "content/core/humanDelay.js",
         "content/core/formFiller.js",
         "content/core/overlay.js",
@@ -91,6 +120,7 @@
       "js": [
         "shared/profileSchema.js",
         "shared/messaging.js",
+        "shared/storage.js",
         "content/core/humanDelay.js",
         "content/core/formFiller.js",
         "content/core/overlay.js",
@@ -109,6 +139,7 @@
       "js": [
         "shared/profileSchema.js",
         "shared/messaging.js",
+        "shared/storage.js",
         "content/core/humanDelay.js",
         "content/core/formFiller.js",
         "content/core/overlay.js",
@@ -131,12 +162,5 @@
     "16": "assets/icons/icon-16.png",
     "48": "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
-  },
-
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "jobapplier@angelina.getlea.io",
-      "strict_min_version": "109.0"
-    }
   }
 }

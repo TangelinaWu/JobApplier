@@ -49,6 +49,19 @@ const PROFILE_DEFAULTS = {
   skills: "",
   coverLetterTemplate: "",
 
+  // Account credentials (stored locally, used for auto-login)
+  linkedinEmail: "",
+  linkedinPassword: "",
+
+  // Extended credentials — used by the auto-matcher for keyword scoring
+  gpa: "",
+  relevantCoursework: "",
+  workExperience: "",
+  projects: "",
+  certifications: "",
+  targetRoles: "",
+  preferredIndustries: "",
+
   // App settings
   claudeApiKey: "",
   autoSubmit: false,

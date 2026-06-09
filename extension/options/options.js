@@ -7,7 +7,9 @@ const TEXT_FIELDS = [
   "currentTitle", "yearsOfExperience", "desiredSalary",
   "university", "fieldOfStudy", "graduationYear",
   "skills", "professionalSummary", "coverLetterTemplate",
-  "claudeApiKey",
+  "gpa", "relevantCoursework", "workExperience", "projects", "certifications",
+  "targetRoles", "preferredIndustries",
+  "linkedinEmail", "linkedinPassword", "claudeApiKey",
 ];
 
 const SELECT_FIELDS = [
