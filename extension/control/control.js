@@ -5,6 +5,72 @@
 let totalAnalyzed = 0
 let goodMatches = 0
 let isPaused = false
+let pendingRequestId = null
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+const tabJobs   = document.getElementById('tab-jobs')
+const tabAi     = document.getElementById('tab-ai')
+const paneJobs  = document.getElementById('pane-jobs')
+const paneAi    = document.getElementById('pane-ai')
+const aiBadge   = document.getElementById('ai-badge')
+const aiEmpty   = document.getElementById('ai-empty')
+const aiForm    = document.getElementById('ai-form')
+const aiQuestion = document.getElementById('ai-question')
+const aiAnswer  = document.getElementById('ai-answer')
+const aiLoading = document.getElementById('ai-loading')
+const aiUse     = document.getElementById('ai-use')
+const aiSkip    = document.getElementById('ai-skip')
+
+tabJobs.addEventListener('click', () => switchTab('jobs'))
+tabAi.addEventListener('click',   () => switchTab('ai'))
+
+function switchTab(which) {
+  if (which === 'jobs') {
+    tabJobs.classList.add('tab-active')
+    tabAi.classList.remove('tab-active')
+    paneJobs.classList.remove('hidden')
+    paneAi.classList.add('hidden')
+  } else {
+    tabAi.classList.add('tab-active')
+    tabJobs.classList.remove('tab-active')
+    paneAi.classList.remove('hidden')
+    paneJobs.classList.add('hidden')
+  }
+}
+
+// ── AI panel actions ──────────────────────────────────────────────────────────
+
+aiSkip.addEventListener('click', () => {
+  if (!pendingRequestId) return
+  chrome.runtime.sendMessage({
+    type: MSG.OVERLAY_ANSWER,
+    payload: { requestId: pendingRequestId, accepted: false, value: null },
+  })
+  clearAiPanel()
+  switchTab('jobs')
+})
+
+aiUse.addEventListener('click', () => {
+  if (!pendingRequestId) return
+  chrome.runtime.sendMessage({
+    type: MSG.OVERLAY_ANSWER,
+    payload: { requestId: pendingRequestId, accepted: true, value: aiAnswer.value },
+  })
+  clearAiPanel()
+  switchTab('jobs')
+})
+
+function clearAiPanel() {
+  pendingRequestId = null
+  aiForm.classList.add('hidden')
+  aiEmpty.classList.remove('hidden')
+  aiBadge.classList.add('hidden')
+  aiAnswer.value = ''
+  aiQuestion.textContent = ''
+}
+
+// ── Existing controls ─────────────────────────────────────────────────────────
 
 const dot        = document.getElementById('status-dot')
 const statusText = document.getElementById('status-text')
@@ -105,6 +171,33 @@ btnStop.addEventListener('click', () => {
 })
 
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === MSG.OVERLAY_QUESTION) {
+    const { requestId, question, suggestion } = msg.payload || {}
+    pendingRequestId = requestId
+    aiQuestion.textContent = question || ''
+
+    // The background sends the processed message with a 'suggestion' key (may be '').
+    // The initial relay from the content script has no 'suggestion' key at all.
+    // Only enable input once the background has processed the question.
+    const processed = 'suggestion' in (msg.payload || {})
+    if (processed) {
+      aiLoading.classList.add('hidden')
+      aiAnswer.classList.remove('hidden')
+      aiAnswer.value = suggestion || ''
+      aiUse.disabled = false
+    } else {
+      aiLoading.classList.remove('hidden')
+      aiAnswer.classList.add('hidden')
+      aiAnswer.value = ''
+      aiUse.disabled = true
+    }
+
+    aiEmpty.classList.add('hidden')
+    aiForm.classList.remove('hidden')
+    aiBadge.classList.remove('hidden')
+    switchTab('ai')
+  }
+
   if (msg.type === MSG.AUTO_MATCH_STATUS) {
     const { text, job } = msg.payload || {}
     setStatus('running', text || 'Running…')

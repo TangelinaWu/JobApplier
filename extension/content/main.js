@@ -41,8 +41,6 @@
     if (initialized) return;
     initialized = true;
 
-    const profile = await getProfile();
-
     // The onUnknown callback: ask Claude and show the overlay
     async function onUnknown(element, labelText) {
       const context = element.closest("form")
@@ -57,23 +55,76 @@
     }
 
     floatingButton.mount({
-      onStart: () => handler.run(profile, onUnknown),
+      // Load profile fresh on each click — ensures credentials seeded after page
+      // load (or reloaded via the menu) are always used.
+      onStart: async () => {
+        const profile = await getProfile();
+        return handler.run(profile, onUnknown);
+      },
       onPause: () => handler.pause(),
       idleLabel: handler.idleLabel || null,
     });
 
     // Auto-apply: if the auto-matcher opened this tab, fill the form automatically
     if (!window.location.hostname.includes('linkedin.com')) {
-      chrome.storage.local.get('pendingAutoApply', ({ pendingAutoApply }) => {
+      chrome.storage.local.get('pendingAutoApply', async ({ pendingAutoApply }) => {
         if (!pendingAutoApply) return
         const jobInfo = pendingAutoApply
         chrome.storage.local.remove('pendingAutoApply')
         chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_FILLING, payload: jobInfo }).catch(() => {})
-        Promise.resolve(handler.run(profile, onUnknown)).then(() => {
+
+        // Some ATS landing pages show an "Apply" / "Apply to this job" button
+        // before revealing the actual form. Click it and wait for the form.
+        await clickIntermediateApplyIfNeeded()
+
+        const profile = await getProfile();
+        handler.run(profile, onUnknown).then(() => {
           chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_COMPLETE, payload: jobInfo }).catch(() => {})
         })
       })
     }
+  }
+
+  // If no application form is visible yet, look for an intermediate "Apply" button
+  // (e.g. "Apply to this job", "Apply now") and click it, then wait for the form.
+  async function clickIntermediateApplyIfNeeded() {
+    // If a form with fillable inputs is already present, nothing to do.
+    if (document.querySelector('form input:not([type="hidden"]), form select, form textarea')) return;
+
+    const APPLY_RE = /^(apply(\s+(to\s+)?(this\s+)?(job|position|role|opening|now))?|apply\s+now)$/i;
+
+    function findBtn() {
+      return [...document.querySelectorAll('a[href], button')].find(el => {
+        if (!APPLY_RE.test(el.textContent.trim())) return false;
+        const s = window.getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+    }
+
+    // Wait up to 4 s for the button to appear (page may still be loading)
+    let btn = null;
+    for (let i = 0; i < 8 && !btn; i++) {
+      btn = findBtn();
+      if (!btn) await new Promise(r => setTimeout(r, 500));
+    }
+    if (!btn) return;
+
+    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 300));
+    btn.click();
+
+    // Wait up to 5 s for a form with fillable fields to appear
+    await new Promise(resolve => {
+      const sel = 'form input:not([type="hidden"]), form select, form textarea';
+      if (document.querySelector(sel)) return resolve();
+      const obs = new MutationObserver(() => {
+        if (document.querySelector(sel)) { obs.disconnect(); resolve(); }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => { obs.disconnect(); resolve(); }, 5000);
+    });
   }
 
   // Re-initialize on SPA navigation

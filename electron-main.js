@@ -127,6 +127,7 @@ function flattenCredentials(creds) {
   flat.fieldOfStudy        = creds.education.fieldOfStudy
   flat.university          = creds.education.university
   flat.graduationYear      = creds.education.graduationYear
+  flat.graduationMonth     = creds.education.graduationMonth || 'May'
   flat.gpa                 = creds.education.gpa
   flat.relevantCoursework  = (creds.education.relevantCoursework || []).join(', ')
   flat.skills              = (creds.skills || []).join(', ')
@@ -196,6 +197,18 @@ async function seedCredentialsToStorage() {
     })()
   `)
   console.log('[JobApplier] Credentials seeded from credentials/profile.json')
+
+  // Seed answers DB from credentials/answers.json
+  const answersPath = path.join(__dirname, 'credentials', 'answers.json')
+  if (fs.existsSync(answersPath)) {
+    try {
+      const { entries } = JSON.parse(fs.readFileSync(answersPath, 'utf8'))
+      await bgWc.executeJavaScript(`chrome.storage.local.set({ answers: ${JSON.stringify(entries || [])} })`)
+      console.log('[JobApplier] Answers DB seeded from credentials/answers.json')
+    } catch (e) {
+      console.warn('[JobApplier] credentials/answers.json parse error:', e.message)
+    }
+  }
 }
 
 async function createWindow() {
@@ -225,7 +238,7 @@ async function createWindow() {
   // Control panel — always on top, small, for the auto-matcher
   const controlWindow = new BrowserWindow({
     width: 360,
-    height: 370,
+    height: 410,
     title: 'JobApplier — Control',
     alwaysOnTop: true,
     resizable: false,

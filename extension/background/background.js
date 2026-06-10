@@ -10,7 +10,44 @@
   }
 })()
 
+// requestId → tabId: tracks which content tab is waiting for an overlay answer
+const pendingQuestions = new Map()
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Overlay: content script → background → control window
+  if (message.type === MSG.OVERLAY_QUESTION) {
+    const tabId = sender.tab?.id
+    const { requestId, question, fieldContext } = message.payload || {}
+    if (!tabId || !requestId) return false
+    pendingQuestions.set(requestId, { tabId, question })
+    handleClaudeRequest({ question, fieldContext })
+      .then(response => {
+        const suggestion = response.error ? '' : (response.suggestion || '')
+        chrome.runtime.sendMessage({
+          type: MSG.OVERLAY_QUESTION,
+          payload: { requestId, question, suggestion },
+        }).catch(() => {})
+      })
+    return false
+  }
+
+  // Overlay: control window → background → content tab
+  if (message.type === MSG.OVERLAY_ANSWER) {
+    const { requestId, accepted, value } = message.payload || {}
+    const pending = pendingQuestions.get(requestId)
+    if (pending !== undefined) {
+      pendingQuestions.delete(requestId)
+      chrome.tabs.sendMessage(pending.tabId, {
+        type: MSG.OVERLAY_ANSWER,
+        payload: { requestId, accepted, value },
+      }).catch(() => {})
+      if (accepted && value) {
+        saveAnswer(pending.question, value).catch(() => {})
+      }
+    }
+    return false
+  }
+
   if (message.type === MSG.ASK_CLAUDE) {
     handleClaudeRequest(message.payload)
       .then(sendResponse)
@@ -91,10 +128,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return false;
   }
+
+  // Diagnostic fill logs: ATS content → control panel
+  if (message.type === MSG.FILL_LOG) {
+    chrome.runtime.sendMessage(message).catch(() => {});
+    return false;
+  }
 });
+
+// Returns a matched answer from the local answers DB, or null if nothing matches.
+function findLocalAnswer(question, answers) {
+  const lower = (question || "").toLowerCase().trim();
+  for (const entry of (answers || [])) {
+    if ((entry.patterns || []).some((p) => lower.includes(p.toLowerCase()))) {
+      return entry.answer;
+    }
+  }
+  return null;
+}
 
 async function handleClaudeRequest({ question, fieldContext, fieldLabel }) {
   const profile = await getProfile();
+
+  // Check the local answers DB first — no API key or network needed
+  const answers = await getAnswers();
+  const localAnswer = findLocalAnswer(question || fieldLabel, answers);
+  if (localAnswer !== null) {
+    return { suggestion: localAnswer };
+  }
+
   const apiKey = profile.claudeApiKey;
 
   if (!apiKey || !apiKey.trim()) {
@@ -139,27 +201,49 @@ async function handleClaudeRequest({ question, fieldContext, fieldLabel }) {
 
 function buildSystemPrompt(profile) {
   const name = `${profile.firstName} ${profile.lastName}`.trim();
+  const gradDate = `${profile.graduationMonth || "May"} ${profile.graduationYear || "2027"}`;
+
   const lines = [
     `You are helping ${name || "a job applicant"} fill out a job application form.`,
     `Answer questions in first person as if you are the applicant.`,
     `Keep answers concise — 1–3 sentences unless the question clearly requires more.`,
     `Do not fabricate specific facts not provided below. If unsure, give a reasonable professional answer.`,
     ``,
-    `Applicant profile:`,
+    `APPLICANT PROFILE:`,
     `- Name: ${name}`,
     `- Email: ${profile.email}`,
+    `- Phone: ${profile.phone}`,
+    `- Location: ${profile.city}, ${profile.state}`,
     `- Current title: ${profile.currentTitle}`,
     `- Years of experience: ${profile.yearsOfExperience}`,
-    `- Work authorization: ${profile.workAuthorization}`,
-    `- Highest degree: ${profile.highestDegree} in ${profile.fieldOfStudy} from ${profile.university}`,
+    `- Work authorization: ${profile.workAuthorization} — authorized to work in the US: Yes; requires sponsorship: No`,
+    `- Education: ${profile.highestDegree} in ${profile.fieldOfStudy} from ${profile.university}, GPA: ${profile.gpa}, graduating ${gradDate}`,
+    `- Currently a full-time student: Yes`,
+    `- Prior internship/co-op experience: Yes (4 internships completed)`,
+    `- Willing to relocate: No`,
+    `- Can work on-site: Yes`,
+    `- Available start date: ${profile.availableStartDate || "June 2026"}`,
+    `- How heard about role: ${profile.referralSource || "LinkedIn"}`,
     `- Skills: ${profile.skills}`,
   ];
 
   if (profile.professionalSummary) {
-    lines.push(`- Professional summary: ${profile.professionalSummary}`);
+    lines.push(`- Summary: ${profile.professionalSummary}`);
   }
 
-  return lines.filter(Boolean).join("\n");
+  if (profile.workExperience) {
+    lines.push(``, `WORK EXPERIENCE:`, profile.workExperience);
+  }
+
+  if (profile.projects) {
+    lines.push(``, `PROJECTS:`, profile.projects);
+  }
+
+  if (profile.relevantCoursework) {
+    lines.push(``, `RELEVANT COURSEWORK: ${profile.relevantCoursework}`);
+  }
+
+  return lines.filter((l) => l !== undefined).join("\n");
 }
 
 async function handleFitCheck({ jobDescription }) {

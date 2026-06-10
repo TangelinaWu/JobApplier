@@ -43,10 +43,20 @@ window.__jaHandler = {
       return;
     }
 
-    floatingButton.setProgress("Filling form…");
+    floatingButton.setProgress("Uploading resume…");
 
-    // Greenhouse sometimes has a hidden resume file input
-    await this._handleResumeUpload(form, profile);
+    // Upload to "Autofill from resume" section first — lets Greenhouse pre-populate
+    // fields before our filler runs. Also uploads to any regular resume file input.
+    const autofilled = await this._handleAutofillFromResume(profile);
+    if (autofilled) {
+      // Give Greenhouse's autofill logic time to populate the form fields
+      await new Promise((r) => setTimeout(r, 1800));
+    } else {
+      // No autofill section — fall back to direct resume file input
+      await this._handleResumeUpload(form, profile);
+    }
+
+    floatingButton.setProgress("Filling form…");
 
     // Fill standard fields
     await formFiller.fillContainer(form, profile, onUnknown);
@@ -73,16 +83,65 @@ window.__jaHandler = {
     this._logApplication(profile);
   },
 
+  // Upload resume to the "Autofill from resume" section.
+  // Greenhouse hides the <input type="file"> and triggers it from a visible button —
+  // we assign the file directly so no click simulation is needed.
+  // Returns true if the upload was performed.
+  async _handleAutofillFromResume(profile) {
+    if (!profile.resumeDataUrl) return false;
+
+    // Find the autofill section. Try specific selectors first, then text search.
+    const section =
+      document.querySelector("#resume_upload") ||
+      document.querySelector("[data-testid*='resume-upload']") ||
+      document.querySelector("[class*='autofill-resume']") ||
+      document.querySelector("[class*='resume-autofill']") ||
+      this._findSectionByText("autofill from resume");
+
+    if (!section) return false;
+
+    // The file input may be hidden (display:none) — assign to it directly.
+    const fileInput =
+      section.querySelector("input[type='file']") ||
+      section.parentElement?.querySelector("input[type='file']");
+
+    if (!fileInput) return false;
+
+    await formFiller.fillFileInput(fileInput, profile.resumeDataUrl, profile.resumeFileName);
+    await humanDelay.betweenFields();
+    return true;
+  },
+
+  // Find the smallest element whose text content contains the given string.
+  _findSectionByText(text) {
+    const lower = text.toLowerCase();
+    let best = null;
+    for (const el of document.querySelectorAll("div, section, li")) {
+      if ((el.textContent || "").toLowerCase().includes(lower)) {
+        if (!best || el.textContent.length < best.textContent.length) {
+          best = el;
+        }
+      }
+    }
+    return best;
+  },
+
   async _handleResumeUpload(form, profile) {
     if (!profile.resumeDataUrl) return;
 
-    // New Greenhouse: #resume_upload input[type=file]
-    // Old Greenhouse: input[name="resume"] or input[name="resume_text"]
-    const fileInput =
-      form.querySelector("#resume_upload input[type='file']") ||
-      form.querySelector("input[type='file'][name*='resume']") ||
-      form.querySelector("input[type='file'][name*='cv']") ||
-      form.querySelector("input[type='file']");
+    // Search the form and the full document (Greenhouse sometimes renders
+    // the resume widget outside the <form> element in newer board layouts).
+    const scopes = [form, document];
+    let fileInput = null;
+    for (const scope of scopes) {
+      fileInput =
+        scope.querySelector("#resume_upload input[type='file']") ||
+        scope.querySelector("input[type='file'][name*='resume']") ||
+        scope.querySelector("input[type='file'][name*='cv']") ||
+        scope.querySelector("input[type='file'][accept*='pdf']") ||
+        scope.querySelector("input[type='file']");
+      if (fileInput) break;
+    }
 
     if (fileInput) {
       await formFiller.fillFileInput(fileInput, profile.resumeDataUrl, profile.resumeFileName);

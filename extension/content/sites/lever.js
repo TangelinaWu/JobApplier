@@ -74,12 +74,18 @@ window.__jaHandler = {
   async _handleResumeUpload(form, profile) {
     if (!profile.resumeDataUrl) return;
 
-    // Lever has a file input for resume — sometimes with a drag-drop wrapper
-    const fileInput = form.querySelector(
-      'input[type="file"][name*="resume"], ' +
-      'input[type="file"][name*="cv"], ' +
-      'input[type="file"][accept*="pdf"]'
-    );
+    // Lever renders the file input inside a drag-drop wrapper; search form then
+    // fall back to document-wide in case the widget is outside the <form>.
+    const scopes = [form, document];
+    let fileInput = null;
+    for (const scope of scopes) {
+      fileInput =
+        scope.querySelector('input[type="file"][name*="resume"]') ||
+        scope.querySelector('input[type="file"][name*="cv"]') ||
+        scope.querySelector('input[type="file"][accept*="pdf"]') ||
+        scope.querySelector('input[type="file"]');
+      if (fileInput) break;
+    }
 
     if (fileInput) {
       await formFiller.fillFileInput(fileInput, profile.resumeDataUrl, profile.resumeFileName);

@@ -6,33 +6,58 @@
   <link rel="stylesheet" href="control.css" />
 </head>
 <body>
-  <div id="header">
-    <span class="dot" id="status-dot"></span>
-    <span id="status-text">Ready</span>
+
+  <div id="tab-bar">
+    <button id="tab-jobs" class="tab tab-active">Jobs</button>
+    <button id="tab-ai" class="tab">AI <span id="ai-badge" class="hidden"></span></button>
   </div>
 
-  <div id="counters">
-    <span id="counter-analyzed">0 analyzed</span>
-    <span id="counter-matches">0 matches</span>
-  </div>
-
-  <div id="current-job" title=""></div>
-  <div id="step-detail"></div>
-
-  <div id="controls">
-    <button id="btn-start">▶ Start</button>
-    <button id="btn-pause" disabled>⏸ Pause</button>
-    <button id="btn-stop"  disabled>■ Stop</button>
-  </div>
-
-  <div id="results"></div>
-
-  <div id="log-section">
-    <div id="log-header">
-      <span>Activity</span>
-      <button id="btn-clear-log">clear</button>
+  <!-- ── Jobs pane ───────────────────────────────────────── -->
+  <div id="pane-jobs">
+    <div id="header">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Ready</span>
     </div>
-    <div id="log"></div>
+
+    <div id="counters">
+      <span id="counter-analyzed">0 analyzed</span>
+      <span id="counter-matches">0 matches</span>
+    </div>
+
+    <div id="current-job" title=""></div>
+    <div id="step-detail"></div>
+
+    <div id="controls">
+      <button id="btn-start">▶ Start</button>
+      <button id="btn-pause" disabled>⏸ Pause</button>
+      <button id="btn-stop"  disabled>■ Stop</button>
+    </div>
+
+    <div id="results"></div>
+
+    <div id="log-section">
+      <div id="log-header">
+        <span>Activity</span>
+        <button id="btn-clear-log">clear</button>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- ── AI question pane ────────────────────────────────── -->
+  <div id="pane-ai" class="hidden">
+    <div id="ai-empty">No pending questions.<br>Unknown fields will appear here during auto-fill.</div>
+    <div id="ai-form" class="hidden">
+      <div class="ai-label">Question</div>
+      <div id="ai-question"></div>
+      <div class="ai-label" id="ai-answer-label">Suggested answer (edit before using)</div>
+      <div id="ai-loading">Claude is thinking…</div>
+      <textarea id="ai-answer" class="hidden" rows="5"></textarea>
+      <div id="ai-actions">
+        <button id="ai-skip">Skip field</button>
+        <button id="ai-use" disabled>Use answer</button>
+      </div>
+    </div>
   </div>
 
   <script src="../shared/profileSchema.js"></script>

@@ -5,44 +5,98 @@
 // profileSchema.js and humanDelay.js must be loaded before this file.
 
 const formFiller = {
-  // Set a value on a React-controlled or plain input/textarea.
-  // Direct .value assignment is ignored by React; we must go through the native setter.
+  // Set a value on a React-controlled, plain input/textarea, or contentEditable element.
+  // Uses the native prototype setter (bypasses JS-level paste guards and React's own setter).
+  // Dispatches InputEvent with inputType:"insertText" so paste-detection listeners don't
+  // mistake this for a paste and clear the field.
   setInputValue(element, value) {
-    const isTextArea = element.tagName.toLowerCase() === "textarea";
+    const tag = element.tagName.toLowerCase();
+
+    if (element.isContentEditable || element.contentEditable === "true") {
+      element.focus();
+      element.textContent = "";
+      element.textContent = value;
+      element.dispatchEvent(new InputEvent("input", {
+        bubbles: true, cancelable: true, inputType: "insertText",
+      }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+
+    const isTextArea = tag === "textarea";
     const proto = isTextArea ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value").set;
     nativeSetter.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new InputEvent("input", {
+      bubbles: true, cancelable: true, inputType: "insertText",
+    }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   },
 
-  // Fill a native <select> by matching option text or value
-  fillSelect(element, value) {
-    const lower = value.toLowerCase();
-    for (const option of element.options) {
-      if (
-        option.value.toLowerCase() === lower ||
-        option.text.toLowerCase().includes(lower)
-      ) {
-        element.value = option.value;
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
-      }
-    }
-    return false; // no matching option found
+  // Normalize a string for fuzzy matching:
+  // lowercase, strip punctuation/accents, collapse whitespace.
+  _norm(s) {
+    return (s || "")
+      .toLowerCase()
+      .replace(/[''`.,\-\/\\()]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   },
 
-  // Fill a radio group — find the radio whose label matches the value
+  // Score how well two normalized strings match (0 = no match, higher = better).
+  // Used to pick the closest option when multiple candidates pass the includes check.
+  _matchScore(a, b) {
+    if (a === b) return 3;
+    if (a.includes(b) || b.includes(a)) return 2;
+    // Word-overlap: count shared words (length ≥ 3 to ignore "of", "in", etc.)
+    const wa = new Set(a.split(" ").filter(w => w.length >= 3));
+    const wb = b.split(" ").filter(w => w.length >= 3);
+    const shared = wb.filter(w => wa.has(w)).length;
+    return shared > 0 ? shared : 0;
+  },
+
+  // Fill a native <select> by finding the best-matching option.
+  // Three passes: exact → substring → word-overlap.
+  fillSelect(element, value) {
+    const nv = this._norm(value);
+    if (!nv) return false;
+
+    // Skip placeholder/empty options
+    const options = [...element.options].filter(o => o.value !== "" && o.text.trim() !== "");
+
+    let best = null, bestScore = 0;
+    for (const opt of options) {
+      const nt = this._norm(opt.text);
+      const nv2 = this._norm(opt.value);
+      const score = Math.max(this._matchScore(nv, nt), this._matchScore(nv, nv2));
+      if (score > bestScore) { bestScore = score; best = opt; }
+    }
+
+    if (best && bestScore > 0) {
+      element.value = best.value;
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+    return false;
+  },
+
+  // Fill a radio group — find the radio whose label best matches the value.
   fillRadioGroup(radios, value) {
-    const lower = value.toLowerCase();
+    const nv = this._norm(value);
+    if (!nv) return false;
+
+    let best = null, bestScore = 0;
     for (const radio of radios) {
-      const label = this.getLabelText(radio).toLowerCase();
-      const val = radio.value.toLowerCase();
-      if (label.includes(lower) || val.includes(lower)) {
-        radio.click();
-        radio.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
-      }
+      const label = this._norm(this.getLabelText(radio));
+      const val   = this._norm(radio.value);
+      const score = Math.max(this._matchScore(nv, label), this._matchScore(nv, val));
+      if (score > bestScore) { bestScore = score; best = radio; }
+    }
+
+    if (best && bestScore > 0) {
+      best.click();
+      best.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
     }
     return false;
   },
@@ -55,7 +109,8 @@ const formFiller = {
     }
   },
 
-  // Fill a file input from a base64 Data URL stored in the profile
+  // Fill a file input from a base64 Data URL stored in the profile.
+  // Handles hidden inputs (common on ATS sites) and React-controlled inputs.
   async fillFileInput(element, dataUrl, fileName) {
     if (!dataUrl) return false;
     try {
@@ -64,9 +119,39 @@ const formFiller = {
       const file = new File([blob], fileName || "resume.pdf", { type: "application/pdf" });
       const dt = new DataTransfer();
       dt.items.add(file);
-      element.files = dt.files;
+
+      // Many ATS sites hide the real <input type="file"> behind a custom button.
+      // Temporarily expose it so events fire correctly.
+      const style = window.getComputedStyle(element);
+      const wasHidden = style.display === "none" || style.visibility === "hidden" || style.opacity === "0";
+      if (wasHidden) {
+        element.style.setProperty("display",    "block",    "important");
+        element.style.setProperty("visibility", "visible",  "important");
+        element.style.setProperty("opacity",    "1",        "important");
+        element.style.setProperty("position",   "fixed",    "important");
+        element.style.setProperty("left",       "-9999px",  "important");
+      }
+
+      // Use the native files setter so React-controlled inputs pick up the change
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
+      if (nativeSetter) {
+        nativeSetter.call(element, dt.files);
+      } else {
+        element.files = dt.files;
+      }
+
+      element.dispatchEvent(new Event("input",  { bubbles: true }));
       element.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
+
+      if (wasHidden) {
+        element.style.removeProperty("display");
+        element.style.removeProperty("visibility");
+        element.style.removeProperty("opacity");
+        element.style.removeProperty("position");
+        element.style.removeProperty("left");
+      }
+
+      return element.files.length > 0;
     } catch {
       return false;
     }
@@ -89,14 +174,19 @@ const formFiller = {
 
     // The listbox may be the element itself or a descendant
     const scope = listbox.getAttribute("role") === "listbox" ? listbox : document;
-    const options = scope.querySelectorAll('[role="option"]');
-    const lower = value.toLowerCase();
+    const options = [...scope.querySelectorAll('[role="option"]')];
+    const nv = this._norm(value);
 
-    for (const option of options) {
-      if (option.textContent.trim().toLowerCase().includes(lower)) {
-        option.click();
-        return true;
-      }
+    // Best-score match (same fuzzy logic as fillSelect)
+    let best = null, bestScore = 0;
+    for (const opt of options) {
+      const score = this._matchScore(nv, this._norm(opt.textContent.trim()));
+      if (score > bestScore) { bestScore = score; best = opt; }
+    }
+
+    if (best && bestScore > 0) {
+      best.click();
+      return true;
     }
     return false;
   },
@@ -113,7 +203,8 @@ const formFiller = {
       if (type === "checkbox") return "checkbox";
       if (type === "hidden") return "hidden";
       if (type === "submit" || type === "button" || type === "reset") return "button";
-      return "text"; // text, email, tel, number, url, date, search, etc.
+      if (role === "combobox") return "combobox"; // ARIA combobox on an input element
+      return "text";
     }
     if (tag === "select") return "select";
     if (tag === "textarea") return "textarea";
@@ -123,33 +214,60 @@ const formFiller = {
   },
 
   // Extract visible label text for a form element.
-  // Checks: aria-label, aria-labelledby, associated <label>, placeholder, name.
+  // Checks six sources in order, from most to least reliable.
   getLabelText(element) {
-    // aria-label takes priority
+    // 1. aria-label
     const ariaLabel = element.getAttribute("aria-label");
-    if (ariaLabel) return ariaLabel;
+    if (ariaLabel) return ariaLabel.trim();
 
-    // aria-labelledby
+    // 2. aria-labelledby (may reference multiple IDs)
     const labelledBy = element.getAttribute("aria-labelledby");
     if (labelledBy) {
-      const labelEl = document.getElementById(labelledBy);
-      if (labelEl) return labelEl.textContent.trim();
+      const text = labelledBy.trim().split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent.trim())
+        .filter(Boolean).join(" ");
+      if (text) return text;
     }
 
-    // Associated <label for="id">
+    // 3. <label for="id">
     if (element.id) {
-      const label = document.querySelector(`label[for="${element.id}"]`);
+      const label = document.querySelector(`label[for="${element.id}"]`) ||
+                    document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
       if (label) return label.textContent.trim();
     }
 
-    // Closest wrapping <label>
+    // 4. Wrapping <label>
     const wrappingLabel = element.closest("label");
     if (wrappingLabel) {
       return wrappingLabel.textContent.replace(element.value || "", "").trim();
     }
 
-    // Placeholder or name as last resort
-    return element.placeholder || element.name || "";
+    // 5. Nearest label/legend sibling inside the same field container.
+    //    Covers the common ATS pattern: <div class="field"><label>...</label><input /></div>
+    const container = element.closest(
+      '.field, .form-group, .form-field, .field-group, .input-group, ' +
+      '[class*="field"], [class*="form-row"], [class*="question"], [class*="input-wrap"], ' +
+      'li, fieldset'
+    );
+    if (container) {
+      const nearby = container.querySelector('label, legend');
+      if (nearby && !nearby.contains(element)) {
+        const text = nearby.textContent.trim();
+        if (text) return text;
+      }
+    }
+
+    // 6. Placeholder is a good hint; fall back to parsing the name attribute.
+    if (element.placeholder) return element.placeholder;
+
+    // Parse bracket-style names: "job_application[first_name]" → "first name"
+    const name = element.name || "";
+    if (name) {
+      const inner = name.match(/\[([^\]]+)\](?:\[\])?$/) || name.match(/^([^[]+)/);
+      if (inner) return inner[1].replace(/_/g, " ");
+    }
+
+    return "";
   },
 
   // Wait for a selector to appear in the DOM (optional scope).
@@ -247,6 +365,36 @@ const formFiller = {
     return "unknown";
   },
 
+  // Highlight a field with a colored ring and scroll it into view.
+  // Removes the previous highlight automatically.
+  _highlighted: null,
+  _savedOutline: '',
+  _savedBoxShadow: '',
+
+  highlightField(element) {
+    // Restore previous field's styles
+    if (this._highlighted) {
+      this._highlighted.style.outline   = this._savedOutline;
+      this._highlighted.style.boxShadow = this._savedBoxShadow;
+    }
+    this._savedOutline   = element.style.outline   || '';
+    this._savedBoxShadow = element.style.boxShadow || '';
+    this._highlighted    = element;
+
+    element.style.outline   = '2px solid #6366f1';
+    element.style.boxShadow = '0 0 0 4px rgba(99,102,241,0.25)';
+
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
+
+  removeHighlight() {
+    if (this._highlighted) {
+      this._highlighted.style.outline   = this._savedOutline;
+      this._highlighted.style.boxShadow = this._savedBoxShadow;
+      this._highlighted = null;
+    }
+  },
+
   // Scan a container for fillable fields and fill them.
   // Returns an array of { element, labelText, status } for each field found.
   async fillContainer(container, profile, onUnknown) {
@@ -271,6 +419,7 @@ const formFiller = {
     }
 
     for (const el of elements) {
+      this.highlightField(el);
       const labelText = this.getLabelText(el);
       let status = await this.fillField(el, profile);
 
@@ -282,6 +431,7 @@ const formFiller = {
       await humanDelay.betweenFields();
     }
 
+    this.removeHighlight();
     return results;
   },
 

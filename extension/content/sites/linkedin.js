@@ -128,6 +128,7 @@ window.__jaHandler = {
   idleLabel: "Check Fit",
   _paused: false,
   _profile: null,
+  _jobInfo: null,
 
   pause() { this._paused = true; },
 
@@ -145,6 +146,18 @@ window.__jaHandler = {
         return;
       }
 
+      // Capture job info now so _openExternalApply can set pendingAutoApply
+      this._jobInfo = {
+        title: document.querySelector(
+          ".job-details-jobs-unified-top-card__job-title, h1.t-24"
+        )?.textContent.trim() || document.title,
+        company: document.querySelector(
+          ".job-details-jobs-unified-top-card__company-name, " +
+          ".jobs-unified-top-card__company-name"
+        )?.textContent.trim() || "",
+        url: window.location.href,
+      };
+
       floatingButton.setProgress("Analyzing fit…");
       const fit = await chrome.runtime.sendMessage({
         type: MSG.CHECK_FIT,
@@ -159,7 +172,7 @@ window.__jaHandler = {
         floatingButton.setProgress("Sent to Claude →");
         const decision = await claudeSentOverlay.show(jobDescription);
         if (decision === "apply") {
-          const opened = this._openExternalApply();
+          const opened = await this._openExternalApply();
           if (opened) { this._logApplication(); floatingButton.setState(floatingButton.STATES.DONE); }
           else { floatingButton.setState(floatingButton.STATES.ERROR); floatingButton.setProgress("No company apply link found"); }
         } else {
@@ -178,7 +191,7 @@ window.__jaHandler = {
       const decision = await fitOverlay.show(fit);
 
       if (decision === "apply") {
-        const opened = this._openExternalApply();
+        const opened = await this._openExternalApply();
         if (!opened) {
           floatingButton.setState(floatingButton.STATES.ERROR);
           floatingButton.setProgress("No company apply link found");
@@ -250,7 +263,12 @@ ${jobDescription.slice(0, 3500)}`;
     return null;
   },
 
-  _openExternalApply() {
+  async _openExternalApply() {
+    // Set pendingAutoApply so the ATS page's content script auto-fills the form
+    if (this._jobInfo) {
+      await chrome.storage.local.set({ pendingAutoApply: this._jobInfo });
+    }
+
     // LinkedIn shows a regular "Apply" link/button for non-Easy-Apply jobs
     const btn =
       document.querySelector(".jobs-apply-button:not(.jobs-easy-apply-button)") ||
@@ -267,6 +285,9 @@ ${jobDescription.slice(0, 3500)}`;
       btn.click();
       return true;
     }
+
+    // No button found — clear the flag so it doesn't linger
+    await chrome.storage.local.remove('pendingAutoApply');
     return false;
   },
 

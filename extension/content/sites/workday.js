@@ -85,13 +85,15 @@ window.__jaHandler = {
   async _handleResumeUpload(profile) {
     if (!profile.resumeDataUrl) return;
 
-    // Workday's file input is often hidden behind a custom upload area.
-    // The underlying <input type="file"> is usually still in the DOM.
-    const fileInput = document.querySelector(
-      "[data-automation-id='file-upload-input'] input[type='file'], " +
-      "input[type='file'][accept*='pdf'], " +
-      "input[type='file'][name*='resume']"
-    );
+    // Workday's file input is hidden behind a custom upload area.
+    // Try automation-id selectors first (most stable), then fall back to generic ones.
+    const fileInput =
+      document.querySelector("[data-automation-id='file-upload-input'] input[type='file']") ||
+      document.querySelector("[data-automation-id='file-upload-input-ref']") ||
+      document.querySelector("[data-automation-id='resume-upload'] input[type='file']") ||
+      document.querySelector("input[type='file'][accept*='pdf']") ||
+      document.querySelector("input[type='file'][name*='resume']") ||
+      document.querySelector("input[type='file']");
 
     if (fileInput) {
       await formFiller.fillFileInput(fileInput, profile.resumeDataUrl, profile.resumeFileName);

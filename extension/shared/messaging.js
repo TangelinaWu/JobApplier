@@ -34,11 +34,20 @@ const MSG = {
   AUTO_APPLY_FILLING:  "AUTO_APPLY_FILLING",   // ATS content script started filling
   AUTO_APPLY_COMPLETE: "AUTO_APPLY_COMPLETE",  // ATS form fill finished
 
+  // Content → Background: show an unknown field question in the control window
+  OVERLAY_QUESTION: "OVERLAY_QUESTION",
+
+  // Control window → Background → Content: user's answer to the overlay question
+  OVERLAY_ANSWER: "OVERLAY_ANSWER",
+
   // Content → Background: bring the sending tab into focus
   FOCUS_TAB: "FOCUS_TAB",
 
   // Content → Background: log a completed application
   LOG_APPLICATION: "LOG_APPLICATION",
+
+  // Content → Background → Control: diagnostic fill log (warn/error from form filler)
+  FILL_LOG: "FILL_LOG",
 };
 
 // Fill status values sent in FILL_STATUS messages

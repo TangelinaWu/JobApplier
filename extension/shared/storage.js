@@ -4,6 +4,7 @@
 const StorageKeys = {
   PROFILE: "profile",
   APP_LOG: "appLog",
+  ANSWERS: "answers",
 };
 
 async function getProfile() {
@@ -21,6 +22,32 @@ async function saveProfile(partial) {
 async function getAppLog() {
   const result = await chrome.storage.local.get(StorageKeys.APP_LOG);
   return result[StorageKeys.APP_LOG] || [];
+}
+
+// Returns the answers DB entries array (seeded from credentials/answers.json on startup)
+async function getAnswers() {
+  const result = await chrome.storage.local.get(StorageKeys.ANSWERS);
+  return result[StorageKeys.ANSWERS] || [];
+}
+
+// Save a question+answer pair to the local DB so it's reused next time.
+// If an entry matching this question already exists, the answer is updated.
+async function saveAnswer(question, answer) {
+  const entries = await getAnswers();
+  const pattern = (question || "").toLowerCase().trim();
+  if (!pattern || !answer) return;
+
+  const idx = entries.findIndex(e =>
+    (e.patterns || []).some(p => p.toLowerCase() === pattern)
+  );
+
+  if (idx >= 0) {
+    entries[idx].answer = answer;
+  } else {
+    entries.push({ patterns: [pattern], answer });
+  }
+
+  await chrome.storage.local.set({ [StorageKeys.ANSWERS]: entries });
 }
 
 async function appendAppLog(entry) {
