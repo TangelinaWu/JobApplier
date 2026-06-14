@@ -10,7 +10,8 @@
     "activeTab",
     "tabs",
     "https://api.anthropic.com/*",
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "http://localhost/*"
   ],
 
   "browser_action": {

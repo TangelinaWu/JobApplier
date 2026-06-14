@@ -87,6 +87,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === MSG.LOG_APPLICATION) {
     appendAppLog(message.payload).catch(() => {});
+    // Forward to Google Sheets server running in the Electron main process.
+    fetch('http://localhost:47293/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message.payload),
+    }).catch(() => {});
     return false;
   }
 

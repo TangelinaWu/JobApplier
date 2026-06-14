@@ -26,6 +26,10 @@ window.__jaHandler = {
     } catch (err) {
       console.error("[JobApplier] Workday error:", err);
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: `⚠ Workday error: ${err.message}` },
+      }).catch(() => {});
     }
   },
 

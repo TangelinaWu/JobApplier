@@ -1,11 +1,141 @@
 const { app, BrowserWindow, Menu, session, webContents } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const http = require('http')
+const crypto = require('crypto')
 
 const TAB_ID = 'jobapplier'
+const SHEETS_PORT = 47293
 
 let mainWindow
 let extensionId
+
+// ── Google Sheets integration ─────────────────────────────────────────────────
+
+let _sheetsServiceAccount = null
+let _sheetsConfig = null
+let _cachedToken = null
+let _tokenExpiresAt = 0
+
+function loadSheetsConfig() {
+  const saPath  = path.join(__dirname, 'credentials', 'sheets-service-account.json')
+  const cfgPath = path.join(__dirname, 'credentials', 'sheets-config.json')
+  if (!fs.existsSync(saPath) || !fs.existsSync(cfgPath)) return false
+  try {
+    _sheetsServiceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'))
+    _sheetsConfig         = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
+    return true
+  } catch (e) {
+    console.warn('[JobApplier] Sheets config parse error:', e.message)
+    return false
+  }
+}
+
+function base64url(buf) {
+  return buf.toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+async function getSheetsAccessToken() {
+  if (_cachedToken && Date.now() < _tokenExpiresAt) return _cachedToken
+  const sa = _sheetsServiceAccount
+  const now = Math.floor(Date.now() / 1000)
+  const header  = base64url(Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })))
+  const payload = base64url(Buffer.from(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  })))
+  const toSign = `${header}.${payload}`
+  const sign = crypto.createSign('SHA256')
+  sign.update(toSign)
+  const signature = base64url(sign.sign(sa.private_key))
+  const jwt = `${toSign}.${signature}`
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${encodeURIComponent(jwt)}`,
+  })
+  const data = await res.json()
+  if (!data.access_token) throw new Error('No token: ' + JSON.stringify(data))
+  _cachedToken = data.access_token
+  _tokenExpiresAt = Date.now() + 50 * 60 * 1000
+  return _cachedToken
+}
+
+async function appendToSheet(rowData) {
+  if (!_sheetsServiceAccount || !_sheetsConfig) return
+  const token = await getSheetsAccessToken()
+  const { spreadsheetId, range } = _sheetsConfig
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [rowData] }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    console.warn('[JobApplier] Sheets API error:', res.status, text)
+  }
+}
+
+function startSheetsServer() {
+  if (!loadSheetsConfig()) {
+    console.log('[JobApplier] No Sheets credentials found — Google Sheets logging disabled.')
+    console.log('[JobApplier] To enable, add credentials/sheets-service-account.json and credentials/sheets-config.json')
+    return
+  }
+
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+    if (req.method === 'POST' && req.url === '/log') {
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', async () => {
+        try {
+          const d = JSON.parse(body)
+          const now = new Date(d.timestamp || Date.now())
+          const row = [
+            now.toLocaleDateString(),
+            now.toLocaleTimeString(),
+            d.company    || '',
+            d.title      || d.role || '',
+            d.atsUrl     || d.url  || '',
+            d.linkedinUrl || '',
+            d.platform   || d.site || '',
+            d.status     || 'applied',
+          ]
+          await appendToSheet(row)
+          res.writeHead(200); res.end('OK')
+        } catch (err) {
+          console.warn('[JobApplier] Sheets log error:', err.message)
+          res.writeHead(500); res.end(err.message)
+        }
+      })
+    } else {
+      res.writeHead(404); res.end()
+    }
+  })
+
+  server.listen(SHEETS_PORT, '127.0.0.1', () => {
+    console.log(`[JobApplier] Google Sheets server ready on port ${SHEETS_PORT}`)
+  })
+
+  server.on('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[JobApplier] Port ${SHEETS_PORT} already in use — Sheets logging disabled`)
+    } else {
+      console.warn('[JobApplier] Sheets server error:', err.message)
+    }
+  })
+}
 
 async function loadExtension() {
   const ext = await session.defaultSession.extensions.loadExtension(
@@ -214,6 +344,7 @@ async function seedCredentialsToStorage() {
 async function createWindow() {
   patchUserAgent()
   await loadExtension()
+  startSheetsServer()
   seedCredentialsToStorage() // fire-and-forget — don't block window creation
 
   // Primary tab — LinkedIn

@@ -22,6 +22,10 @@ window.__jaHandler = {
     } catch (err) {
       console.error("[JobApplier] Lever error:", err);
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: `⚠ Lever error: ${err.message}` },
+      }).catch(() => {});
       return;
     }
   },
@@ -35,6 +39,10 @@ window.__jaHandler = {
 
     if (!form) {
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: '⚠ Lever: application form not found on this page' },
+      }).catch(() => {});
       return;
     }
 

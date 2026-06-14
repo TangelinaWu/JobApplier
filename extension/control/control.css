@@ -48,6 +48,18 @@ body {
 }
 #ai-badge.hidden { display: none; }
 
+#jobs-badge {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: #f59e0b;
+  border-radius: 50%;
+  margin-left: 4px;
+  vertical-align: middle;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+#jobs-badge.hidden { display: none; }
+
 /* ── Panes ───────────────────────────────────────────────── */
 
 #pane-jobs {

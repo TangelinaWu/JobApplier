@@ -23,11 +23,65 @@
 
   let initialized = false;
 
+  // Shared callback used by both auto-apply and manual paths.
+  async function onUnknown(element, labelText) {
+    const context = element.closest("form")
+      ? element.closest("form").textContent.slice(0, 300)
+      : "";
+    const result = await overlayManager.ask(labelText, context);
+    if (result.accepted && result.value) {
+      formFiller.setInputValue(element, result.value);
+      return "filled";
+    }
+    return "skipped";
+  }
+
   async function init() {
     const handler = window.__jaHandler;
     if (!handler) return;
 
-    // Detect whether we're on a job application page
+    // Auto-apply: check BEFORE form detection so intermediate "Apply" buttons
+    // on landing pages (which hide the form until clicked) are handled correctly.
+    // The previous code placed this after isDetected, so it never ran when the
+    // form wasn't yet visible — the most common case on ATS landing pages.
+    if (!window.location.hostname.includes('linkedin.com') && !initialized) {
+      const { pendingAutoApply } = await new Promise(r =>
+        chrome.storage.local.get('pendingAutoApply', r)
+      );
+      if (pendingAutoApply) {
+        initialized = true;
+        const jobInfo = pendingAutoApply;
+        chrome.storage.local.remove('pendingAutoApply');
+        chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_FILLING, payload: jobInfo }).catch(() => {});
+
+        // Click any intermediate "Apply" button and wait for the real form to appear.
+        await clickIntermediateApplyIfNeeded();
+
+        const profile = await getProfile();
+        handler.run(profile, onUnknown).then(() => {
+          chrome.runtime.sendMessage({
+            type: MSG.AUTO_APPLY_COMPLETE,
+            payload: { ...jobInfo, atsUrl: window.location.href },
+          }).catch(() => {});
+          // Log to Google Sheets (if configured) and local app log.
+          chrome.runtime.sendMessage({
+            type: MSG.LOG_APPLICATION,
+            payload: {
+              timestamp:   Date.now(),
+              company:     jobInfo.company,
+              title:       jobInfo.title,
+              linkedinUrl: jobInfo.url,
+              atsUrl:      window.location.href,
+              platform:    window.location.hostname,
+              status:      'applied',
+            },
+          }).catch(() => {});
+        });
+        return;
+      }
+    }
+
+    // Manual mode: detect the form and mount the floating "Fill Form" button.
     const isDetected = detector.detect(handler.detectionRules);
 
     if (!isDetected) {
@@ -41,19 +95,6 @@
     if (initialized) return;
     initialized = true;
 
-    // The onUnknown callback: ask Claude and show the overlay
-    async function onUnknown(element, labelText) {
-      const context = element.closest("form")
-        ? element.closest("form").textContent.slice(0, 300)
-        : "";
-      const result = await overlayManager.ask(labelText, context);
-      if (result.accepted && result.value) {
-        formFiller.setInputValue(element, result.value);
-        return "filled";
-      }
-      return "skipped";
-    }
-
     floatingButton.mount({
       // Load profile fresh on each click — ensures credentials seeded after page
       // load (or reloaded via the menu) are always used.
@@ -64,25 +105,6 @@
       onPause: () => handler.pause(),
       idleLabel: handler.idleLabel || null,
     });
-
-    // Auto-apply: if the auto-matcher opened this tab, fill the form automatically
-    if (!window.location.hostname.includes('linkedin.com')) {
-      chrome.storage.local.get('pendingAutoApply', async ({ pendingAutoApply }) => {
-        if (!pendingAutoApply) return
-        const jobInfo = pendingAutoApply
-        chrome.storage.local.remove('pendingAutoApply')
-        chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_FILLING, payload: jobInfo }).catch(() => {})
-
-        // Some ATS landing pages show an "Apply" / "Apply to this job" button
-        // before revealing the actual form. Click it and wait for the form.
-        await clickIntermediateApplyIfNeeded()
-
-        const profile = await getProfile();
-        handler.run(profile, onUnknown).then(() => {
-          chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_COMPLETE, payload: jobInfo }).catch(() => {})
-        })
-      })
-    }
   }
 
   // If no application form is visible yet, look for an intermediate "Apply" button
@@ -109,7 +131,14 @@
       btn = findBtn();
       if (!btn) await new Promise(r => setTimeout(r, 500));
     }
-    if (!btn) return;
+
+    if (!btn) {
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: '⚠ No apply button found — check page manually' },
+      }).catch(() => {});
+      return;
+    }
 
     btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await new Promise(r => setTimeout(r, 300));
@@ -123,7 +152,14 @@
         if (document.querySelector(sel)) { obs.disconnect(); resolve(); }
       });
       obs.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => { obs.disconnect(); resolve(); }, 5000);
+      setTimeout(() => {
+        obs.disconnect();
+        chrome.runtime.sendMessage({
+          type: MSG.FILL_LOG,
+          payload: { severity: 'warn', text: '⚠ Form not found after clicking apply — may need manual submission' },
+        }).catch(() => {});
+        resolve();
+      }, 5000);
     });
   }
 

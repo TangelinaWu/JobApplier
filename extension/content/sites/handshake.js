@@ -26,6 +26,10 @@ window.__jaHandler = {
     } catch (err) {
       console.error("[JobApplier] Handshake error:", err);
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: `⚠ Handshake error: ${err.message}` },
+      }).catch(() => {});
     }
   },
 
@@ -37,6 +41,10 @@ window.__jaHandler = {
 
     if (!form) {
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: '⚠ Handshake: application form not found on this page' },
+      }).catch(() => {});
       return;
     }
 

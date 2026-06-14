@@ -27,6 +27,10 @@ window.__jaHandler = {
     } catch (err) {
       console.error("[JobApplier] Greenhouse error:", err);
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: `⚠ Greenhouse error: ${err.message}` },
+      }).catch(() => {});
     }
   },
 
@@ -40,6 +44,10 @@ window.__jaHandler = {
 
     if (!form) {
       floatingButton.setState(floatingButton.STATES.ERROR);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: { severity: 'warn', text: '⚠ Greenhouse: application form not found on this page' },
+      }).catch(() => {});
       return;
     }
 

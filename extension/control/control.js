@@ -14,6 +14,7 @@ const tabAi     = document.getElementById('tab-ai')
 const paneJobs  = document.getElementById('pane-jobs')
 const paneAi    = document.getElementById('pane-ai')
 const aiBadge   = document.getElementById('ai-badge')
+const jobsBadge = document.getElementById('jobs-badge')
 const aiEmpty   = document.getElementById('ai-empty')
 const aiForm    = document.getElementById('ai-form')
 const aiQuestion = document.getElementById('ai-question')
@@ -31,6 +32,7 @@ function switchTab(which) {
     tabAi.classList.remove('tab-active')
     paneJobs.classList.remove('hidden')
     paneAi.classList.add('hidden')
+    jobsBadge.classList.add('hidden')
   } else {
     tabAi.classList.add('tab-active')
     tabJobs.classList.remove('tab-active')
@@ -276,6 +278,14 @@ chrome.runtime.onMessage.addListener((msg) => {
     setIdle()
     setStatus('done', `Done — ${totalAnalyzed} analyzed, ${goodMatches} applied`)
     addLog(`Session complete — ${totalAnalyzed} analyzed, ${goodMatches} applied`, 'system')
+  }
+
+  if (msg.type === MSG.FILL_LOG) {
+    const { severity, text } = msg.payload || {}
+    addLog(text, severity === 'warn' ? 'warn' : 'info')
+    if (severity === 'warn') {
+      jobsBadge.classList.remove('hidden')
+    }
   }
 })
 

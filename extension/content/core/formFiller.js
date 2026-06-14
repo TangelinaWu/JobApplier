@@ -318,8 +318,11 @@ const formFiller = {
     const profileValue = lookupProfileValue(labelText, profile);
 
     if (type === "file") {
-      // Only fill if it looks like a resume upload
-      const isResume = /resume|cv|curriculum/i.test(labelText);
+      // Treat as resume if: label matches, accept includes pdf, or it's the only file input on the form.
+      const container = element.closest('form') || document;
+      const isResume = /resume|cv|curriculum/i.test(labelText)
+        || (element.accept || '').toLowerCase().includes('pdf')
+        || container.querySelectorAll('input[type="file"]').length === 1;
       if (isResume && profile.resumeDataUrl) {
         await this.fillFileInput(element, profile.resumeDataUrl, profile.resumeFileName);
         return "filled";
@@ -370,6 +373,8 @@ const formFiller = {
   _highlighted: null,
   _savedOutline: '',
   _savedBoxShadow: '',
+  // Elements marked amber because they couldn't be answered; cleared on next fillContainer run.
+  _unknownMarked: [],
 
   highlightField(element) {
     // Restore previous field's styles
@@ -398,6 +403,13 @@ const formFiller = {
   // Scan a container for fillable fields and fill them.
   // Returns an array of { element, labelText, status } for each field found.
   async fillContainer(container, profile, onUnknown) {
+    // Clear amber rings from any previous run.
+    for (const el of this._unknownMarked) {
+      el.style.removeProperty('outline');
+      el.style.removeProperty('box-shadow');
+    }
+    this._unknownMarked = [];
+
     const results = [];
 
     // Gather all interactive elements, deduplicate radio groups by name
@@ -418,13 +430,24 @@ const formFiller = {
       elements.push(el);
     }
 
+    const unanswered = [];
+
     for (const el of elements) {
       this.highlightField(el);
       const labelText = this.getLabelText(el);
       let status = await this.fillField(el, profile);
 
+      const wasUnknown = status === "unknown";
       if (status === "unknown" && typeof onUnknown === "function") {
         status = await onUnknown(el, labelText);
+      }
+
+      // Field was unknown and the user didn't (or couldn't) provide an answer.
+      if (wasUnknown && status !== "filled") {
+        el.style.setProperty('outline',    '2px solid #f59e0b', 'important');
+        el.style.setProperty('box-shadow', '0 0 0 4px rgba(245,158,11,0.25)', 'important');
+        this._unknownMarked.push(el);
+        unanswered.push(labelText || '(unlabeled)');
       }
 
       results.push({ element: el, labelText, status });
@@ -432,6 +455,19 @@ const formFiller = {
     }
 
     this.removeHighlight();
+
+    // Notify control panel of any fields that still need attention.
+    if (unanswered.length > 0) {
+      const preview = unanswered.join(', ').slice(0, 120);
+      chrome.runtime.sendMessage({
+        type: MSG.FILL_LOG,
+        payload: {
+          severity: 'warn',
+          text: `⚠ Needs attention (${unanswered.length}): ${preview}`,
+        },
+      }).catch(() => {});
+    }
+
     return results;
   },
 
