@@ -50,6 +50,15 @@ window.__jaHandler = {
 
     floatingButton.setProgress("Filling form…");
 
+    // Scan form fields before filling
+    formScanner.report({
+      site: 'handshake',
+      company: document.querySelector('.company-name, .employer-name')?.textContent.trim() || '',
+      role: document.querySelector('h1, .job-title')?.textContent.trim() || document.title,
+      url: window.location.href,
+      fields: formScanner.scan(form),
+    })
+
     // Handshake uses a previously-uploaded resume from the user's account.
     // The document picker shows a list of uploaded resumes.
     await this._selectResume();

@@ -57,3 +57,15 @@ async function appendAppLog(entry) {
   if (log.length > 500) log.length = 500;
   await chrome.storage.local.set({ [StorageKeys.APP_LOG]: log });
 }
+
+async function getSeenJobs() {
+  const result = await chrome.storage.local.get('seenJobUrls');
+  return new Set(Array.isArray(result.seenJobUrls) ? result.seenJobUrls : []);
+}
+
+async function addSeenJob(url) {
+  if (!url) return;
+  const seen = await getSeenJobs();
+  seen.add(url);
+  await chrome.storage.local.set({ seenJobUrls: [...seen] });
+}

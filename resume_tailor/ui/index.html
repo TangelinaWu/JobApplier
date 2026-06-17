@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resume Tailor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Resume Tailor</h1>
+  <span class="subtitle">Paste a job description → Claude picks your best bullets → approve → PDF</span>
+</div>
+
+<div class="main">
+
+  <!-- ── Left: controls + results ── -->
+  <div class="left-panel">
+    <div class="left-scroll">
+
+      <!-- Job description -->
+      <div>
+        <div class="section-label">Job Description</div>
+        <textarea id="job-desc" placeholder="Paste the full job description here…"></textarea>
+      </div>
+
+      <button class="btn-primary" id="tailor-btn">Tailor Resume</button>
+
+      <!-- Results (hidden until tailored) -->
+      <div id="results-section" style="display:none; flex-direction:column; gap:14px;">
+
+        <hr class="divider">
+
+        <!-- Fit score -->
+        <div id="fit-section">
+          <div id="fit-badge" class="fit-badge"></div>
+          <div id="fit-reason" class="fit-reason"></div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Experience -->
+        <div>
+          <div class="section-label">Experience Bullets</div>
+          <div id="exp-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Projects -->
+        <div>
+          <div class="section-label">Projects</div>
+          <div id="proj-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Skills -->
+        <div>
+          <div class="section-label">Technical Skills</div>
+          <div id="skills-area" class="skills-grid"></div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Right: preview ── -->
+  <div class="right-panel">
+    <div class="preview-toolbar">
+      <span>RESUME PREVIEW</span>
+      <span id="preview-note" style="font-size:11px;color:#999;">— will update as you toggle bullets —</span>
+    </div>
+    <div class="preview-wrap">
+      <iframe id="preview-frame" title="Resume Preview"></iframe>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Bottom bar ── -->
+<div class="bottombar">
+  <div id="status-msg">Load a job description and click "Tailor Resume" to begin.</div>
+  <button class="btn-success" id="gen-pdf-btn" disabled>Generate PDF</button>
+  <button class="btn-secondary" id="open-pdf-btn" style="display:none">Open PDF</button>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>

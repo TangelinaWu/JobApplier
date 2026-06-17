@@ -48,6 +48,20 @@ window.__jaHandler = {
 
     floatingButton.setProgress("Filling form…");
 
+    // Scan form fields before filling
+    formScanner.report({
+      site: 'lever',
+      company: window.location.pathname.split('/')[1] || '',
+      role: document.title.replace(' - Lever', '').trim(),
+      url: window.location.href,
+      fields: formScanner.scan(form),
+    })
+
+    // Log resume upload
+    chrome.runtime.sendMessage({ type: MSG.FILL_LOG, payload: { label: 'Resume', status: 'uploading' } }).catch(() => {});
+    await this._handleResumeUpload(form, profile);
+    chrome.runtime.sendMessage({ type: MSG.FILL_LOG, payload: { label: 'Resume', status: 'uploaded' } }).catch(() => {});
+
     await formFiller.fillContainer(form, profile, onUnknown);
 
     if (this._paused) {
@@ -56,9 +70,6 @@ window.__jaHandler = {
     }
 
     await humanDelay.beforeClick();
-
-    // Lever uses a resume upload section — try to find it
-    await this._handleResumeUpload(form, profile);
 
     // Notify user to review and submit
     floatingButton.setState(floatingButton.STATES.DONE);

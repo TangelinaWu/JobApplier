@@ -8,27 +8,27 @@ const humanDelay = {
 
   // Between keystrokes when typing character-by-character
   keystroke() {
-    return new Promise((r) => setTimeout(r, this._rand(40, 130)));
+    return new Promise((r) => setTimeout(r, this._rand(20, 60)));
   },
 
   // After focusing a field, before filling it
   short() {
-    return new Promise((r) => setTimeout(r, this._rand(200, 600)));
+    return new Promise((r) => setTimeout(r, this._rand(80, 200)));
   },
 
   // Between filling one field and moving to the next
   betweenFields() {
-    return new Promise((r) => setTimeout(r, this._rand(500, 1400)));
+    return new Promise((r) => setTimeout(r, this._rand(200, 500)));
   },
 
   // Before clicking a navigation button (Next, Submit)
   beforeClick() {
-    return new Promise((r) => setTimeout(r, this._rand(800, 2000)));
+    return new Promise((r) => setTimeout(r, this._rand(300, 700)));
   },
 
   // After a page/section transition completes
   afterNavigation() {
-    return new Promise((r) => setTimeout(r, this._rand(1200, 3000)));
+    return new Promise((r) => setTimeout(r, this._rand(500, 1200)));
   },
 
   // Simulate typing one character at a time into an <input> or <textarea>.

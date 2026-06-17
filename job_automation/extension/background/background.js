@@ -10,6 +10,23 @@
   }
 })()
 
+// Sync seen job URLs from Google Sheets on startup so the auto-matcher
+// skips already-processed jobs even across app restarts.
+;(async () => {
+  try {
+    const resp = await fetch('http://127.0.0.1:3742/seen')
+    if (!resp.ok) return
+    const { urls } = await resp.json()
+    if (!Array.isArray(urls) || urls.length === 0) return
+    const seen = await getSeenJobs()
+    for (const u of urls) seen.add(u)
+    await chrome.storage.local.set({ seenJobUrls: [...seen] })
+    console.log(`[JobApplier] Synced ${urls.length} seen job URLs from Sheets`)
+  } catch {
+    // Server not running or Sheets not configured — that's fine
+  }
+})()
+
 // requestId → tabId: tracks which content tab is waiting for an overlay answer
 const pendingQuestions = new Map()
 
@@ -93,6 +110,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(message.payload),
     }).catch(() => {});
+    if (message.payload?.url) {
+      addSeenJob(message.payload.url).catch(() => {})
+    }
     return false;
   }
 
@@ -124,6 +144,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  // Apply button not found: LinkedIn tab → control panel
+  if (message.type === MSG.APPLY_BTN_NOT_FOUND) {
+    chrome.runtime.sendMessage(message).catch(() => {});
+    return false;
+  }
+
+  // User clicked Retry in control panel → LinkedIn tab
+  if (message.type === MSG.APPLY_BTN_RETRY) {
+    chrome.tabs.query({ url: ['*://www.linkedin.com/jobs/*', '*://linkedin.com/jobs/*'] }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        chrome.tabs.sendMessage(tabs[0].id, message).catch(() => {});
+      }
+    });
+    return false;
+  }
+
   // Auto-apply: ATS tab filling/done → LinkedIn tab (to unblock autoMatcher) + control panel
   if (message.type === MSG.AUTO_APPLY_FILLING || message.type === MSG.AUTO_APPLY_COMPLETE) {
     chrome.runtime.sendMessage(message).catch(() => {});
@@ -137,6 +173,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Diagnostic fill logs: ATS content → control panel
   if (message.type === MSG.FILL_LOG) {
+    chrome.runtime.sendMessage(message).catch(() => {});
+    return false;
+  }
+
+  // Form field discovery: save to storage and forward to control panel
+  if (message.type === MSG.FORM_DISCOVERED) {
+    const entry = Object.assign({}, message.payload, { scannedAt: new Date().toISOString() });
+    chrome.storage.local.get('discoveredFields', ({ discoveredFields }) => {
+      const existing = Array.isArray(discoveredFields) ? discoveredFields : [];
+      // Replace same URL if already scanned, otherwise append
+      const deduped = existing.filter(e => e.url !== entry.url);
+      chrome.storage.local.set({ discoveredFields: [...deduped, entry] });
+    });
     chrome.runtime.sendMessage(message).catch(() => {});
     return false;
   }

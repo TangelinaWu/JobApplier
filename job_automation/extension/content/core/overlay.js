@@ -72,8 +72,16 @@ const overlayManager = (() => {
         payload: { requestId, question, fieldContext },
       });
 
+      // Auto-skip after 3 s if the control panel receives no response
+      const timeoutId = setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(handler);
+        hideToast();
+        resolve({ accepted: false, value: '' });
+      }, 3000);
+
       function handler(msg) {
         if (msg.type === MSG.OVERLAY_ANSWER && msg.payload?.requestId === requestId) {
+          clearTimeout(timeoutId);
           chrome.runtime.onMessage.removeListener(handler);
           hideToast();
           resolve({ accepted: msg.payload.accepted, value: msg.payload.value || '' });

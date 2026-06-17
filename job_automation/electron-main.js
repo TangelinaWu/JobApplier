@@ -151,12 +151,35 @@ function patchUserAgent() {
   session.defaultSession.setUserAgent(ua)
 }
 
+// Right-click context menu for any BrowserWindow.
+// Electron does not show one by default — without this, copy/paste only works
+// via the keyboard shortcuts wired through the macOS menu bar.
+function attachContextMenu(win) {
+  win.webContents.on('context-menu', (_e, params) => {
+    const template = []
+    if (params.isEditable) {
+      template.push(
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { type: 'separator' },
+        { role: 'selectAll' },
+      )
+    } else if (params.selectionText.trim()) {
+      template.push({ role: 'copy' })
+    }
+    if (template.length === 0) return
+    Menu.buildFromTemplate(template).popup({ window: win })
+  })
+}
+
 function makeTab(url) {
   const win = new BrowserWindow({
     tabbingIdentifier: TAB_ID,
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   })
   win.loadURL(url)
+  attachContextMenu(win)
   return win
 }
 
@@ -169,6 +192,7 @@ function openSettings() {
     autoHideMenuBar: true,
   })
   win.loadURL(`chrome-extension://${extensionId}/options/options.html`)
+  attachContextMenu(win)
 }
 
 function openPopup() {
@@ -182,6 +206,7 @@ function openPopup() {
     alwaysOnTop: true,
   })
   win.loadURL(`chrome-extension://${extensionId}/popup/popup.html`)
+  attachContextMenu(win)
 }
 
 function buildMenu() {
@@ -192,6 +217,18 @@ function buildMenu() {
   }
 
   const template = [
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
     {
       label: 'JobApplier',
       submenu: [
@@ -279,7 +316,7 @@ function flattenCredentials(creds) {
 }
 
 async function seedCredentialsToStorage() {
-  const credPath = path.join(__dirname, 'credentials', 'profile.json')
+  const credPath = path.join(__dirname, '..', 'credentials', 'profile.json')
   if (!fs.existsSync(credPath)) return
 
   let creds
@@ -293,7 +330,7 @@ async function seedCredentialsToStorage() {
   const flat = flattenCredentials(creds)
 
   // Seed resume PDF if present in credentials/
-  const resumePath = path.join(__dirname, 'credentials', 'resume.pdf')
+  const resumePath = path.join(__dirname, '..', 'credentials', 'resume.pdf')
   if (fs.existsSync(resumePath)) {
     const pdfBase64 = fs.readFileSync(resumePath).toString('base64')
     flat.resumeFileName = 'resume.pdf'
@@ -312,24 +349,28 @@ async function seedCredentialsToStorage() {
     return
   }
 
-  // Merge file fields into storage; preserve secrets that are only set via options page
+  // Merge file fields into storage; preserve secrets that are only set via options page.
+  // Use the Promise-based chrome.storage API (Electron 42 / Chromium 130+).
   await bgWc.executeJavaScript(`
     (async () => {
-      const stored = await new Promise(r => chrome.storage.local.get('profile', r));
-      const existing = stored.profile || {};
+      let existing = {};
+      try {
+        const stored = await chrome.storage.local.get('profile');
+        existing = (stored && stored.profile) || {};
+      } catch (e) {}
       const fromFile = ${JSON.stringify(flat)};
       const merged = Object.assign({}, fromFile, {
         claudeApiKey:     existing.claudeApiKey     || '',
         linkedinEmail:    existing.linkedinEmail    || fromFile.linkedinEmail || '',
         linkedinPassword: existing.linkedinPassword || '',
       });
-      chrome.storage.local.set({ profile: merged });
+      await chrome.storage.local.set({ profile: merged });
     })()
   `)
   console.log('[JobApplier] Credentials seeded from credentials/profile.json')
 
   // Seed answers DB from credentials/answers.json
-  const answersPath = path.join(__dirname, 'credentials', 'answers.json')
+  const answersPath = path.join(__dirname, '..', 'credentials', 'answers.json')
   if (fs.existsSync(answersPath)) {
     try {
       const { entries } = JSON.parse(fs.readFileSync(answersPath, 'utf8'))
@@ -356,6 +397,14 @@ async function createWindow() {
   })
   mainWindow.loadURL('https://www.linkedin.com/jobs/search/?f_E=1&f_JT=I&keywords=software+engineer+intern')
   mainWindow.on('closed', () => { mainWindow = null })
+  attachContextMenu(mainWindow)
+
+  // Allow target="_blank" links (e.g. LinkedIn external apply buttons) to open
+  // new windows. Without this Electron may silently block them, preventing the
+  // ATS tab from ever appearing. New windows inherit defaultSession so the
+  // extension content scripts are injected automatically.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'allow' }))
+  mainWindow.webContents.on('did-create-window', win => attachContextMenu(win))
 
   Menu.setApplicationMenu(buildMenu())
 
@@ -377,6 +426,7 @@ async function createWindow() {
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   })
   controlWindow.loadURL(`chrome-extension://${extensionId}/control/control.html`)
+  attachContextMenu(controlWindow)
 
   // Return focus to the LinkedIn tab
   mainWindow.focus()

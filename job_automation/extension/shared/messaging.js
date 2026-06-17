@@ -40,6 +40,12 @@ const MSG = {
   // Control window → Background → Content: user's answer to the overlay question
   OVERLAY_ANSWER: "OVERLAY_ANSWER",
 
+  // Auto-apply: apply button not found after retries → prompt user in control panel
+  APPLY_BTN_NOT_FOUND: "APPLY_BTN_NOT_FOUND",
+
+  // Control panel → LinkedIn tab: user clicked Retry after APPLY_BTN_NOT_FOUND
+  APPLY_BTN_RETRY: "APPLY_BTN_RETRY",
+
   // Content → Background: bring the sending tab into focus
   FOCUS_TAB: "FOCUS_TAB",
 
@@ -48,6 +54,9 @@ const MSG = {
 
   // Content → Background → Control: diagnostic fill log (warn/error from form filler)
   FILL_LOG: "FILL_LOG",
+
+  // Content → Background → Control: all fields discovered on an application form
+  FORM_DISCOVERED: "FORM_DISCOVERED",
 };
 
 // Fill status values sent in FILL_STATUS messages

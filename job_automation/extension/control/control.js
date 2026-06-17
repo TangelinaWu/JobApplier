@@ -9,12 +9,14 @@ let pendingRequestId = null
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const tabJobs   = document.getElementById('tab-jobs')
-const tabAi     = document.getElementById('tab-ai')
-const paneJobs  = document.getElementById('pane-jobs')
-const paneAi    = document.getElementById('pane-ai')
-const aiBadge   = document.getElementById('ai-badge')
-const jobsBadge = document.getElementById('jobs-badge')
+const tabJobs    = document.getElementById('tab-jobs')
+const tabAi      = document.getElementById('tab-ai')
+const tabFields  = document.getElementById('tab-fields')
+const paneJobs   = document.getElementById('pane-jobs')
+const paneAi     = document.getElementById('pane-ai')
+const paneFields = document.getElementById('pane-fields')
+const aiBadge    = document.getElementById('ai-badge')
+const fieldsBadge = document.getElementById('fields-badge')
 const aiEmpty   = document.getElementById('ai-empty')
 const aiForm    = document.getElementById('ai-form')
 const aiQuestion = document.getElementById('ai-question')
@@ -23,22 +25,17 @@ const aiLoading = document.getElementById('ai-loading')
 const aiUse     = document.getElementById('ai-use')
 const aiSkip    = document.getElementById('ai-skip')
 
-tabJobs.addEventListener('click', () => switchTab('jobs'))
-tabAi.addEventListener('click',   () => switchTab('ai'))
+tabJobs.addEventListener('click',   () => switchTab('jobs'))
+tabAi.addEventListener('click',     () => switchTab('ai'))
+tabFields.addEventListener('click', () => { switchTab('fields'); fieldsBadge.classList.add('hidden') })
 
 function switchTab(which) {
-  if (which === 'jobs') {
-    tabJobs.classList.add('tab-active')
-    tabAi.classList.remove('tab-active')
-    paneJobs.classList.remove('hidden')
-    paneAi.classList.add('hidden')
-    jobsBadge.classList.add('hidden')
-  } else {
-    tabAi.classList.add('tab-active')
-    tabJobs.classList.remove('tab-active')
-    paneAi.classList.remove('hidden')
-    paneJobs.classList.add('hidden')
-  }
+  tabJobs.classList.toggle('tab-active',   which === 'jobs')
+  tabAi.classList.toggle('tab-active',     which === 'ai')
+  tabFields.classList.toggle('tab-active', which === 'fields')
+  paneJobs.classList.toggle('hidden',    which !== 'jobs')
+  paneAi.classList.toggle('hidden',      which !== 'ai')
+  paneFields.classList.toggle('hidden',  which !== 'fields')
 }
 
 // ── AI panel actions ──────────────────────────────────────────────────────────
@@ -73,6 +70,28 @@ function clearAiPanel() {
 }
 
 // ── Existing controls ─────────────────────────────────────────────────────────
+
+const applyBtnPrompt = document.getElementById('apply-btn-prompt')
+const applyBtnMsg    = document.getElementById('apply-btn-msg')
+const btnApplyRetry  = document.getElementById('btn-apply-retry')
+const markCompletePrompt = document.getElementById('mark-complete-prompt')
+const btnMarkComplete    = document.getElementById('btn-mark-complete')
+
+let _currentJobInfo = null
+
+btnApplyRetry.addEventListener('click', () => {
+  applyBtnPrompt.classList.add('hidden')
+  chrome.runtime.sendMessage({ type: MSG.APPLY_BTN_RETRY })
+  addLog('Retrying apply button…', 'system')
+})
+
+btnMarkComplete.addEventListener('click', () => {
+  markCompletePrompt.classList.add('hidden')
+  chrome.runtime.sendMessage({ type: MSG.AUTO_APPLY_COMPLETE, payload: _currentJobInfo || {} }).catch(() => {})
+  const company = _currentJobInfo?.company || 'company'
+  addLog(`Manually marked complete — ${company} ✓`, 'success')
+  _currentJobInfo = null
+})
 
 const dot        = document.getElementById('status-dot')
 const statusText = document.getElementById('status-text')
@@ -127,6 +146,9 @@ function setIdle() {
   isPaused = false
   currentJobEl.textContent = ''
   stepDetailEl.textContent = ''
+  applyBtnPrompt.classList.add('hidden')
+  markCompletePrompt.classList.add('hidden')
+  _currentJobInfo = null
 }
 
 btnStart.addEventListener('click', () => {
@@ -254,24 +276,57 @@ chrome.runtime.onMessage.addListener((msg) => {
 
   if (msg.type === MSG.AUTO_APPLY_STARTED) {
     const { title, company } = msg.payload || {}
+    _currentJobInfo = msg.payload || {}
     currentJobEl.textContent = [company, title].filter(Boolean).join(' · ')
     setStep('Opening application…')
     setStatus('running', `Applying to ${esc(company || 'company')}…`)
     addLog(`Clicking apply — ${company || 'company'} · returning to LinkedIn`, 'apply')
+    markCompletePrompt.classList.remove('hidden')
   }
 
   if (msg.type === MSG.AUTO_APPLY_FILLING) {
     const { company } = msg.payload || {}
+    if (!_currentJobInfo) _currentJobInfo = msg.payload || {}
     setStep(`Filling form at ${esc(company || 'company site')}…`)
     setStatus('running', 'Filling application form…')
     addLog(`Filling form — ${company || 'company site'}`, 'apply')
+    markCompletePrompt.classList.remove('hidden')
   }
 
   if (msg.type === MSG.AUTO_APPLY_COMPLETE) {
     const { company } = msg.payload || {}
+    markCompletePrompt.classList.add('hidden')
+    _currentJobInfo = null
     setStep(`✓ Applied to ${esc(company || 'company')}`)
     setStatus('running', 'Applied — moving to next job…')
     addLog(`Application submitted — ${company || 'company'} ✓`, 'success')
+  }
+
+  if (msg.type === MSG.FILL_LOG) {
+    const { label, status } = msg.payload || {}
+    const display = label ? capitalize(label) : 'field'
+    if (status === 'filled') {
+      setStep(`Filling: ${display}`)
+      addLog(`Filled: ${display}`, 'fill')
+    } else if (status === 'uploading') {
+      setStep('Uploading resume…')
+      addLog('Uploading resume', 'fill')
+    } else if (status === 'uploaded') {
+      setStep('Resume uploaded')
+      addLog('Resume uploaded', 'fill')
+    } else if (status === 'step') {
+      setStep(`Step: ${display}`)
+      addLog(`── ${display}`, 'system')
+    } else if (status === 'unknown') {
+      addLog(`? Unknown field: ${display}`, 'claude')
+    }
+  }
+
+  if (msg.type === MSG.APPLY_BTN_NOT_FOUND) {
+    const { company } = msg.payload || {}
+    applyBtnMsg.textContent = `Apply button not found for ${company || 'this job'}. Scroll to the button or wait for the page to load, then click Retry.`
+    applyBtnPrompt.classList.remove('hidden')
+    addLog(`Apply button not found — ${company || 'company'} — waiting for retry`, 'warn')
   }
 
   if (msg.type === MSG.AUTO_MATCH_DONE) {
@@ -280,15 +335,98 @@ chrome.runtime.onMessage.addListener((msg) => {
     addLog(`Session complete — ${totalAnalyzed} analyzed, ${goodMatches} applied`, 'system')
   }
 
-  if (msg.type === MSG.FILL_LOG) {
-    const { severity, text } = msg.payload || {}
-    addLog(text, severity === 'warn' ? 'warn' : 'info')
-    if (severity === 'warn') {
-      jobsBadge.classList.remove('hidden')
-    }
+  if (msg.type === MSG.FORM_DISCOVERED) {
+    renderDiscoveredForm(msg.payload)
+    fieldsBadge.textContent = '!'
+    fieldsBadge.classList.remove('hidden')
   }
+})
+
+// ── Fields tab ────────────────────────────────────────────────────────────────
+
+const fieldsEmpty   = document.getElementById('fields-empty')
+const fieldsList    = document.getElementById('fields-list')
+const fieldsActions = document.getElementById('fields-actions')
+const btnExport     = document.getElementById('btn-export-fields')
+const btnClearFields = document.getElementById('btn-clear-fields')
+
+let _discoveredForms = []
+
+// Restore on startup
+chrome.storage.local.get('discoveredFields', ({ discoveredFields }) => {
+  if (!Array.isArray(discoveredFields) || discoveredFields.length === 0) return
+  _discoveredForms = discoveredFields
+  discoveredFields.forEach(renderDiscoveredForm)
+})
+
+function renderDiscoveredForm(entry) {
+  if (!entry || !Array.isArray(entry.fields) || entry.fields.length === 0) return
+
+  // Deduplicate by URL
+  if (_discoveredForms.some(f => f.url === entry.url)) {
+    _discoveredForms = _discoveredForms.filter(f => f.url !== entry.url)
+  }
+  _discoveredForms.push(entry)
+
+  // Remove existing card for same URL if re-rendered
+  const existing = fieldsList.querySelector(`[data-url="${CSS.escape(entry.url)}"]`)
+  if (existing) existing.remove()
+
+  fieldsEmpty.classList.add('hidden')
+  fieldsActions.classList.remove('hidden')
+
+  const card = document.createElement('div')
+  card.className = 'fields-card'
+  card.dataset.url = entry.url
+
+  const header = document.createElement('div')
+  header.className = 'fields-card-header'
+  const title = [entry.company, entry.role].filter(Boolean).join(' · ') || entry.url
+  header.innerHTML = `
+    <span class="fields-card-title" title="${esc(entry.url)}">${esc(title)}</span>
+    <span class="fields-card-meta">${esc(entry.site || '')} · ${entry.fields.length} fields</span>
+  `
+  card.appendChild(header)
+
+  const table = document.createElement('div')
+  table.className = 'fields-table'
+  for (const f of entry.fields) {
+    const row = document.createElement('div')
+    row.className = 'fields-row'
+    const opts = f.options && f.options.length ? ` [${f.options.slice(0, 3).join(' / ')}${f.options.length > 3 ? '…' : ''}]` : ''
+    row.innerHTML = `
+      <span class="fields-type">${esc(f.type)}</span>
+      <span class="fields-label">${esc(f.label)}${opts ? `<span class="fields-opts">${esc(opts)}</span>` : ''}</span>
+      ${f.required ? '<span class="fields-req">*</span>' : ''}
+    `
+    table.appendChild(row)
+  }
+  card.appendChild(table)
+  fieldsList.prepend(card)
+}
+
+btnExport.addEventListener('click', () => {
+  const json = JSON.stringify(_discoveredForms, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'discovered_fields.json'
+  a.click()
+})
+
+btnClearFields.addEventListener('click', () => {
+  _discoveredForms = []
+  fieldsList.innerHTML = ''
+  fieldsEmpty.classList.remove('hidden')
+  fieldsActions.classList.add('hidden')
+  fieldsBadge.classList.add('hidden')
+  chrome.storage.local.remove('discoveredFields')
 })
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function capitalize(s) {
+  return String(s || '').replace(/\b\w/g, c => c.toUpperCase())
 }

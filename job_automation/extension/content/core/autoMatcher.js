@@ -5,6 +5,7 @@ const autoMatcher = (() => {
   let _running = false
   let _paused  = false
   let _index   = 0
+  const MAX_JOBS = 4
 
   // ── Hard filters — instant disqualifiers, checked before scoring ────────────
 
@@ -121,12 +122,22 @@ ${description.slice(0, 2500)}`
   function waitForClaudeJobResult(timeoutMs) {
     return new Promise(resolve => {
       const timer = setTimeout(() => {
+        clearInterval(stopPoll)
         chrome.storage.onChanged.removeListener(listener)
         resolve(null)
       }, timeoutMs)
+      const stopPoll = setInterval(() => {
+        if (!_running) {
+          clearTimeout(timer)
+          clearInterval(stopPoll)
+          chrome.storage.onChanged.removeListener(listener)
+          resolve(null)
+        }
+      }, 200)
       function listener(changes, area) {
         if (area === 'local' && changes.claudeJobResult?.newValue) {
           clearTimeout(timer)
+          clearInterval(stopPoll)
           chrome.storage.onChanged.removeListener(listener)
           const result = changes.claudeJobResult.newValue
           chrome.storage.local.remove('claudeJobResult')
@@ -178,11 +189,26 @@ ${description.slice(0, 2500)}`
         '.job-details-jobs-unified-top-card__company-name, ' +
         '.jobs-unified-top-card__company-name'
       )?.textContent.trim() || '',
-      url: window.location.href,
+      url: normalizeLinkedInJobUrl(window.location.href),
     }
   }
 
+  function normalizeLinkedInJobUrl(url) {
+    try {
+      const u = new URL(url)
+      const m = u.pathname.match(/\/jobs\/view\/(\d+)/)
+      if (m) return `https://www.linkedin.com/jobs/view/${m[1]}/`
+      const id = u.searchParams.get('currentJobId')
+      if (id) return `https://www.linkedin.com/jobs/view/${id}/`
+    } catch {}
+    return url
+  }
+
   function extractCardInfo(card) {
+    const linkEl = card.querySelector('a[href*="/jobs/view/"]')
+    let url = null
+    if (linkEl?.href) url = normalizeLinkedInJobUrl(linkEl.href)
+
     return {
       title: card.querySelector(
         '[class*="job-card-list__title"], [class*="job-card-container__link"]'
@@ -190,6 +216,7 @@ ${description.slice(0, 2500)}`
       company: card.querySelector(
         '[class*="company-name"], [class*="primary-description"]'
       )?.textContent.trim() || '',
+      url,
     }
   }
 
@@ -203,13 +230,24 @@ ${description.slice(0, 2500)}`
       return
     }
 
-    while (_running && _index < cards.length) {
+    while (_running && _index < Math.min(cards.length, MAX_JOBS)) {
       if (_paused) { await wait(300); continue }
 
-      const card = cards[_index]
+      const card     = cards[_index]
       const cardInfo = extractCardInfo(card)
 
-      sendStatus(`Analyzing ${_index + 1} of ${cards.length}…`, cardInfo)
+      // Skip jobs we've already processed in a previous run
+      if (cardInfo.url) {
+        const seen = await getSeenJobs()
+        if (seen.has(cardInfo.url)) {
+          sendStatus(`Already processed — skipping ${cardInfo.title}`, cardInfo)
+          _index++
+          await wait(200)
+          continue
+        }
+      }
+
+      sendStatus(`Analyzing ${_index + 1} of ${Math.min(cards.length, MAX_JOBS)}…`, cardInfo)
 
       const clickTarget =
         card.querySelector('[class*="job-card-container__link"], [class*="job-card-list__title"]') ||
@@ -225,11 +263,12 @@ ${description.slice(0, 2500)}`
         // Hard filters — instant disqualifiers before asking Claude
         const skipReason = checkHardFilters(description, profile)
         if (skipReason) {
-          sendStatus(`Skipped: ${skipReason}`, info)
+          sendStatus(`Filtered: ${skipReason}`, info)
           chrome.runtime.sendMessage({
             type: MSG.AUTO_MATCH_RESULT,
             payload: { ...cardInfo, ...info, decision: 'SKIP', skipReason },
           }).catch(() => {})
+          sendLog(info, 'FILTERED', skipReason, description)
           _index++
           await wait(500)
           continue
@@ -249,23 +288,27 @@ ${description.slice(0, 2500)}`
 
         if (decision === 'APPLY') {
           sendStatus(`Criteria met — Applying to ${info.company}…`, info)
-          // Bring LinkedIn tab back into focus (Claude tab may be in front)
           chrome.runtime.sendMessage({ type: MSG.FOCUS_TAB }).catch(() => {})
           await wait(400)
           const clicked = await attemptAutoApply(info)
           if (clicked) {
             sendStatus(`Opening ${info.company} application…`, info)
-            const outcome = await waitForAutoApplyComplete(35000)
+            const outcome = await waitForAutoApplyComplete(120000)
             if (outcome === 'complete') {
               sendStatus(`Applied to ${info.company} ✓ — continuing…`, null)
+              sendLog(info, 'APPLIED', reason, description)
             } else {
               sendStatus(`${info.company} form timed out — moving on…`, null)
+              sendLog(info, 'APPLY_FAILED', 'Form timed out', description)
               await new Promise(r => chrome.storage.local.remove('pendingAutoApply', r))
             }
             await wait(2000)
           } else {
             sendStatus(`No external apply link for ${info.company} — skipping`, null)
+            sendLog(info, 'APPLY_FAILED', 'No apply button found', description)
           }
+        } else {
+          sendLog(info, 'SKIP', reason, description)
         }
       }
 
@@ -282,7 +325,20 @@ ${description.slice(0, 2500)}`
     // Set flag so the ATS tab's content script knows to auto-fill
     await new Promise(r => chrome.storage.local.set({ pendingAutoApply: jobInfo }, r))
 
-    const btn = await findExternalApplyButton()
+    let btn = await findExternalApplyButton()
+    if (!btn) {
+      // Pause and prompt user in the control panel, then try once more
+      sendStatus(`Apply button not found for ${jobInfo.company} — waiting for your input…`, jobInfo)
+      chrome.runtime.sendMessage({
+        type: MSG.APPLY_BTN_NOT_FOUND,
+        payload: jobInfo,
+      }).catch(() => {})
+
+      await waitForRetrySignal(120000)
+
+      btn = await findExternalApplyButton(1, 0)
+    }
+
     if (!btn) {
       await new Promise(r => chrome.storage.local.remove('pendingAutoApply', r))
       return false
@@ -297,8 +353,36 @@ ${description.slice(0, 2500)}`
     return true
   }
 
-  async function findExternalApplyButton(retries = 6, delayMs = 500) {
+  function waitForRetrySignal(timeoutMs) {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        clearInterval(stopPoll)
+        chrome.runtime.onMessage.removeListener(listener)
+        resolve()
+      }, timeoutMs)
+      const stopPoll = setInterval(() => {
+        if (!_running) {
+          clearTimeout(timer)
+          clearInterval(stopPoll)
+          chrome.runtime.onMessage.removeListener(listener)
+          resolve()
+        }
+      }, 200)
+      function listener(msg) {
+        if (msg.type === MSG.APPLY_BTN_RETRY) {
+          clearTimeout(timer)
+          clearInterval(stopPoll)
+          chrome.runtime.onMessage.removeListener(listener)
+          resolve()
+        }
+      }
+      chrome.runtime.onMessage.addListener(listener)
+    })
+  }
+
+  async function findExternalApplyButton(retries = 10, delayMs = 500) {
     for (let i = 0; i < retries; i++) {
+      if (!_running) return null
       const btn =
         document.querySelector('.jobs-apply-button:not(.jobs-easy-apply-button)') ||
         document.querySelector('a.jobs-apply-button[href]') ||
@@ -315,18 +399,43 @@ ${description.slice(0, 2500)}`
   function waitForAutoApplyComplete(timeoutMs) {
     return new Promise(resolve => {
       const timer = setTimeout(() => {
+        clearInterval(stopPoll)
         chrome.runtime.onMessage.removeListener(listener)
         resolve('timeout')
       }, timeoutMs)
+      const stopPoll = setInterval(() => {
+        if (!_running) {
+          clearTimeout(timer)
+          clearInterval(stopPoll)
+          chrome.runtime.onMessage.removeListener(listener)
+          resolve('stopped')
+        }
+      }, 200)
       function listener(msg) {
         if (msg.type === MSG.AUTO_APPLY_COMPLETE) {
           clearTimeout(timer)
+          clearInterval(stopPoll)
           chrome.runtime.onMessage.removeListener(listener)
           resolve('complete')
         }
       }
       chrome.runtime.onMessage.addListener(listener)
     })
+  }
+
+  function sendLog(info, decision, reason, description) {
+    chrome.runtime.sendMessage({
+      type:    MSG.LOG_APPLICATION,
+      payload: {
+        site:        'linkedin',
+        company:     info.company || '',
+        role:        info.title   || '',
+        url:         info.url     || '',
+        decision,
+        reason,
+        description: description ? description.slice(0, 500) : '',
+      },
+    }).catch(() => {})
   }
 
   function finish() {

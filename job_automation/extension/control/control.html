@@ -10,6 +10,7 @@
   <div id="tab-bar">
     <button id="tab-jobs" class="tab tab-active">Jobs <span id="jobs-badge" class="hidden"></span></button>
     <button id="tab-ai" class="tab">AI <span id="ai-badge" class="hidden"></span></button>
+    <button id="tab-fields" class="tab">Fields <span id="fields-badge" class="hidden"></span></button>
   </div>
 
   <!-- ── Jobs pane ───────────────────────────────────────── -->
@@ -33,6 +34,16 @@
       <button id="btn-stop"  disabled>■ Stop</button>
     </div>
 
+    <div id="apply-btn-prompt" class="hidden">
+      <span id="apply-btn-msg"></span>
+      <button id="btn-apply-retry">↩ Retry</button>
+    </div>
+
+    <div id="mark-complete-prompt" class="hidden">
+      <span id="mark-complete-msg">Portal closed? Mark as submitted to continue.</span>
+      <button id="btn-mark-complete">✓ Done</button>
+    </div>
+
     <div id="results"></div>
 
     <div id="log-section">
@@ -41,6 +52,16 @@
         <button id="btn-clear-log">clear</button>
       </div>
       <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- ── Fields discovery pane ─────────────────────────── -->
+  <div id="pane-fields" class="hidden">
+    <div id="fields-empty">No forms scanned yet.<br>Fields appear here when you apply to jobs.</div>
+    <div id="fields-list"></div>
+    <div id="fields-actions" class="hidden">
+      <button id="btn-export-fields">Export as JSON</button>
+      <button id="btn-clear-fields">Clear all</button>
     </div>
   </div>
 

@@ -270,6 +270,54 @@ const formFiller = {
     return "";
   },
 
+  // Send a fill log entry to the control panel.
+  _log(label, status) {
+    chrome.runtime.sendMessage({
+      type: MSG.FILL_LOG,
+      payload: { label, status },
+    }).catch(() => {});
+  },
+
+  // Find the first visible button/input whose text matches a regex.
+  findButton(textRegex) {
+    for (const el of document.querySelectorAll(
+      'button, input[type="submit"], input[type="button"], [role="button"]'
+    )) {
+      if (!this.isVisible(el)) continue;
+      const text = (el.textContent || el.value || el.getAttribute('aria-label') || '').trim();
+      if (textRegex.test(text)) return el;
+    }
+    return null;
+  },
+
+  // Wait for the DOM to stop mutating (SPA page transitions).
+  // Resolves once no mutations fire for `quietMs`, or after `timeoutMs`.
+  _waitForDomSettle(timeoutMs = 5000, quietMs = 400) {
+    return new Promise(resolve => {
+      let timer = null;
+      const reset = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { observer.disconnect(); resolve(); }, quietMs);
+      };
+      const observer = new MutationObserver(reset);
+      observer.observe(document.body, { childList: true, subtree: true });
+      reset();
+      setTimeout(() => { observer.disconnect(); resolve(); }, timeoutMs);
+    });
+  },
+
+  // Click the Next/Continue button on the current step and wait for the new section.
+  // Returns true if a button was found and clicked, false if no Next button exists.
+  async advanceStep() {
+    const NEXT_RE = /^(next|continue|save\s*(and\s*|&\s*)?continue|next\s*step|proceed)$/i;
+    const btn = this.findButton(NEXT_RE);
+    if (!btn) return false;
+    await humanDelay.beforeClick();
+    btn.click();
+    await this._waitForDomSettle();
+    return true;
+  },
+
   // Wait for a selector to appear in the DOM (optional scope).
   waitForSelector(selector, timeoutMs, scope) {
     const root = scope || document;
@@ -330,8 +378,11 @@ const formFiller = {
       return "skipped";
     }
 
-    if (profileValue === null || profileValue === "") {
-      return "unknown"; // Trigger Claude overlay
+    if (profileValue === "") {
+      return "skipped"; // Profile has this field but no value — leave it blank
+    }
+    if (profileValue === null) {
+      return "unknown"; // Unrecognized label — ask the overlay
     }
 
     await humanDelay.short();
@@ -433,7 +484,6 @@ const formFiller = {
     const unanswered = [];
 
     for (const el of elements) {
-      this.highlightField(el);
       const labelText = this.getLabelText(el);
       let status = await this.fillField(el, profile);
 
@@ -450,6 +500,7 @@ const formFiller = {
         unanswered.push(labelText || '(unlabeled)');
       }
 
+      this._log(labelText || 'field', status);
       results.push({ element: el, labelText, status });
       await humanDelay.betweenFields();
     }

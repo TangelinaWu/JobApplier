@@ -360,7 +360,7 @@ function resolveProfileValue(key, profile) {
   if (key === "__referralSource")    return profile.referralSource || "LinkedIn";
   if (key === "__startDate")         return profile.availableStartDate || "June 2026";
   const val = profile[key];
-  if (val === undefined || val === null || val === "") return null;
+  if (val === undefined || val === null) return null;
   return String(val);
 }
 
@@ -373,6 +373,20 @@ function lookupProfileValue(labelText, profile) {
     if (entry.maxLabelLength && lower.length > entry.maxLabelLength) continue;
     if (entry.patterns.some((p) => lower.includes(p))) {
       return resolveProfileValue(entry.key, profile);
+    }
+  }
+  return null;
+}
+
+// Look up a saved answer from the Q&A answers DB.
+// answersEntries: array from chrome.storage.local 'answers' key.
+// Returns the answer string, or null if no match.
+function lookupFromAnswers(labelText, answersEntries) {
+  if (!answersEntries || !answersEntries.length || !labelText) return null;
+  const lower = (labelText || '').toLowerCase().trim();
+  for (const entry of answersEntries) {
+    if ((entry.patterns || []).some(p => lower.includes(p.toLowerCase()))) {
+      return entry.answer || null;
     }
   }
   return null;

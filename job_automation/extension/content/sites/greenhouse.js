@@ -51,7 +51,18 @@ window.__jaHandler = {
       return;
     }
 
+    // Scan form fields before filling so we capture the pristine form
+    const scannedFields = formScanner.scan(form)
+    formScanner.report({
+      site: 'greenhouse',
+      company: document.querySelector('.company-name, h1.company')?.textContent.trim() || '',
+      role: (document.querySelector("meta[property='og:title']")?.content || document.title).trim(),
+      url: window.location.href,
+      fields: scannedFields,
+    })
+
     floatingButton.setProgress("Uploading resume…");
+    chrome.runtime.sendMessage({ type: MSG.FILL_LOG, payload: { label: 'Resume', status: 'uploading' } }).catch(() => {});
 
     // Upload to "Autofill from resume" section first — lets Greenhouse pre-populate
     // fields before our filler runs. Also uploads to any regular resume file input.
@@ -77,14 +88,20 @@ window.__jaHandler = {
     // Greenhouse may have a separate demographic/EEOC section below the main form
     await this._handleEeocSection(profile, onUnknown);
 
+    // Some Greenhouse boards have a second confirmation/review step — advance if present.
+    const advanced = await formFiller.advanceStep();
+    if (advanced) {
+      await formFiller.fillContainer(document.body, profile, onUnknown);
+    }
+
     floatingButton.setState(floatingButton.STATES.DONE);
     floatingButton.setProgress("Review & submit");
 
     if (profile.autoSubmit) {
       await humanDelay.beforeClick();
-      const submitBtn = form.querySelector(
-        'input[type="submit"]#submit_app, button[type="submit"]'
-      );
+      const submitBtn =
+        document.querySelector('input[type="submit"]#submit_app') ||
+        document.querySelector('button[type="submit"]');
       if (submitBtn) submitBtn.click();
     }
 
