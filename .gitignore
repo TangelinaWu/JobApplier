@@ -4,3 +4,8 @@ dist/
 .DS_Store
 credentials/sheets-credentials.json
 credentials/tailor_config.json
+credentials/profile.json
+credentials/answers.json
+credentials/master_resume.json
+credentials/resume.pdf
+credentials/*.pdf
