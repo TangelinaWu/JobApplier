@@ -5,7 +5,7 @@ const autoMatcher = (() => {
   let _running = false
   let _paused  = false
   let _index   = 0
-  const MAX_JOBS = 4
+  const MAX_JOBS = 20
 
   // ── Hard filters — instant disqualifiers, checked before scoring ────────────
 
@@ -259,6 +259,19 @@ ${description.slice(0, 2500)}`
       const description = extractDescription()
       if (description) {
         const info = extractCurrentJobInfo()
+
+        // Skip LinkedIn Easy Apply jobs — the auto-filler only handles external ATS forms
+        const easyApplyBtn = document.querySelector(
+          '.jobs-apply-button--top-card, .jobs-s-apply button, ' +
+          '.job-details-jobs-unified-top-card__container--two-pane button'
+        )
+        if (easyApplyBtn && /easy\s*apply/i.test(easyApplyBtn.textContent)) {
+          sendStatus(`Easy Apply — skipping ${info.company}`, info)
+          sendLog(info, 'SKIP', 'Easy Apply (not supported)', description)
+          _index++
+          await wait(500)
+          continue
+        }
 
         // Hard filters — instant disqualifiers before asking Claude
         const skipReason = checkHardFilters(description, profile)

@@ -63,19 +63,6 @@
             type: MSG.AUTO_APPLY_COMPLETE,
             payload: { ...jobInfo, atsUrl: window.location.href },
           }).catch(() => {});
-          // Log to Google Sheets (if configured) and local app log.
-          chrome.runtime.sendMessage({
-            type: MSG.LOG_APPLICATION,
-            payload: {
-              timestamp:   Date.now(),
-              company:     jobInfo.company,
-              title:       jobInfo.title,
-              linkedinUrl: jobInfo.url,
-              atsUrl:      window.location.href,
-              platform:    window.location.hostname,
-              status:      'applied',
-            },
-          }).catch(() => {});
         });
         return;
       }

@@ -62,24 +62,31 @@ async function sendPromptToClaude(text) {
 // ── Response detection ────────────────────────────────────────────────────────
 
 async function waitForStructuredResponse() {
-  // Try 3 times at 3s, 5s, 9s.
-  // No streaming detection — isStreaming() was permanently matching unrelated
-  // Claude.ai UI buttons, causing the check to always skip. We just wait the
-  // delay and look for the response block directly.
-  const delays = [3000, 5000, 9000]
+  // Poll every 800ms. Once FIELD + DEGREE + REASON are all present, wait for
+  // the content to stop changing for two consecutive checks (1.6s stable) before
+  // returning — this handles slow or streaming responses without fixed waits.
+  const deadline = Date.now() + 90000
+  let lastText = ''
+  let stableCount = 0
 
-  for (let attempt = 0; attempt < delays.length; attempt++) {
-    await wait(delays[attempt])
-
+  while (Date.now() < deadline) {
+    await wait(800)
     const text = document.body.innerText
     const lastField = text.lastIndexOf('FIELD:')
-    // DEGREE: immediately follows FIELD: — both present means the block is readable
-    if (lastField !== -1 && text.slice(lastField).includes('DEGREE:')) {
-      await wait(300) // tiny buffer for any trailing chars
-      const final = document.body.innerText
-      const fi = final.lastIndexOf('FIELD:')
-      // 400 chars before captures the YES/NO verdict line even through preamble
-      return final.slice(Math.max(0, fi - 400), fi + 400)
+
+    if (lastField !== -1 && text.slice(lastField).includes('DEGREE:') && text.slice(lastField).includes('REASON:')) {
+      if (text === lastText) {
+        stableCount++
+        if (stableCount >= 2) {
+          return text.slice(Math.max(0, lastField - 400), lastField + 400)
+        }
+      } else {
+        stableCount = 0
+        lastText = text
+      }
+    } else {
+      lastText = text
+      stableCount = 0
     }
   }
 

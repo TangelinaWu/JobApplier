@@ -82,8 +82,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === MSG.SEND_TO_CLAUDE) {
     const { prompt, isJobAnalysis } = message.payload || {};
     if (isJobAnalysis) {
-      // Auto-matcher mode: prompt is already in storage as pendingClaudeJobAnalysis.
-      // claude.js content script picks it up via storage.onChanged — no tab interaction needed.
+      // Fail fast if no Claude.ai tab is open — prevents the autoMatcher from hanging 90s.
+      chrome.tabs.query({ url: ['*://claude.ai/*'] }, (tabs) => {
+        if (!tabs || tabs.length === 0) {
+          chrome.storage.local.set({
+            claudeJobResult: { decision: 'SKIP', reason: 'Claude.ai tab not open — open claude.ai to enable auto-analysis', error: 'no_claude_tab' }
+          })
+        }
+      })
       return false;
     }
     // Manual Check Fit: push prompt and focus the Claude project tab
@@ -105,7 +111,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === MSG.LOG_APPLICATION) {
     appendAppLog(message.payload).catch(() => {});
     // Forward to Google Sheets server running in the Electron main process.
-    fetch('http://localhost:47293/log', {
+    fetch('http://127.0.0.1:3742/log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(message.payload),
