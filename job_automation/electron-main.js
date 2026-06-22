@@ -158,20 +158,26 @@ function buildMenu() {
 }
 
 function flattenCredentials(creds) {
+  // If profile.json is already flat (written by the options page or exported manually),
+  // return it as-is rather than crashing on missing nested keys like creds.education.
+  const isFlat = creds.firstName !== undefined || creds.email !== undefined ||
+                 creds.lastName !== undefined || creds.phone !== undefined
+  if (isFlat) return { ...creds }
+
   const flat = {}
-  Object.assign(flat, creds.personal)
-  Object.assign(flat, creds.work)
-  flat.highestDegree       = creds.education.highestDegree
-  flat.fieldOfStudy        = creds.education.fieldOfStudy
-  flat.university          = creds.education.university
-  flat.graduationYear      = creds.education.graduationYear
-  flat.graduationMonth     = creds.education.graduationMonth || 'May'
-  flat.gpa                 = creds.education.gpa
-  flat.relevantCoursework  = (creds.education.relevantCoursework || []).join(', ')
-  flat.skills              = (creds.skills || []).join(', ')
+  Object.assign(flat, creds.personal  || {})
+  Object.assign(flat, creds.work      || {})
+  flat.highestDegree       = creds.education?.highestDegree      || ''
+  flat.fieldOfStudy        = creds.education?.fieldOfStudy       || ''
+  flat.university          = creds.education?.university         || ''
+  flat.graduationYear      = creds.education?.graduationYear     || ''
+  flat.graduationMonth     = creds.education?.graduationMonth    || 'May'
+  flat.gpa                 = creds.education?.gpa                || ''
+  flat.relevantCoursework  = (creds.education?.relevantCoursework || []).join(', ')
+  flat.skills              = (creds.skills        || []).join(', ')
   flat.certifications      = (creds.certifications || []).join(', ')
-  flat.targetRoles         = (creds.targeting.targetRoles || []).join(', ')
-  flat.preferredIndustries = (creds.targeting.preferredIndustries || []).join(', ')
+  flat.targetRoles         = (creds.targeting?.targetRoles          || []).join(', ')
+  flat.preferredIndustries = (creds.targeting?.preferredIndustries  || []).join(', ')
   flat.workExperience = (creds.workExperience || []).map(e =>
     `${e.company} · ${e.title} · ${e.startDate} – ${e.endDate}\n` +
     (e.bullets || []).map(b => `• ${b}`).join('\n')
@@ -180,9 +186,9 @@ function flattenCredentials(creds) {
     `${p.name} — ${(p.technologies || []).join(', ')}\n` +
     (p.bullets || []).map(b => `• ${b}`).join('\n')
   ).join('\n\n')
-  flat.professionalSummary = creds.narrative.professionalSummary
-  flat.coverLetterTemplate = creds.narrative.coverLetterTemplate
-  Object.assign(flat, creds.demographics)
+  flat.professionalSummary = creds.narrative?.professionalSummary || ''
+  flat.coverLetterTemplate = creds.narrative?.coverLetterTemplate  || ''
+  Object.assign(flat, creds.demographics || {})
   return flat
 }
 

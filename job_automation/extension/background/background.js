@@ -12,19 +12,25 @@
 
 // Sync seen job URLs from Google Sheets on startup so the auto-matcher
 // skips already-processed jobs even across app restarts.
+// Retries up to 8 times (10 s total) in case the Sheets server hasn't started yet.
 ;(async () => {
-  try {
-    const resp = await fetch('http://127.0.0.1:3742/seen')
-    if (!resp.ok) return
-    const { urls } = await resp.json()
-    if (!Array.isArray(urls) || urls.length === 0) return
-    const seen = await getSeenJobs()
-    for (const u of urls) seen.add(u)
-    await chrome.storage.local.set({ seenJobUrls: [...seen] })
-    console.log(`[JobApplier] Synced ${urls.length} seen job URLs from Sheets`)
-  } catch {
-    // Server not running or Sheets not configured — that's fine
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500))
+      const resp = await fetch('http://127.0.0.1:3742/seen')
+      if (!resp.ok) return
+      const { urls } = await resp.json()
+      if (!Array.isArray(urls)) return
+      const seen = await getSeenJobs()
+      for (const u of urls) seen.add(u)
+      await chrome.storage.local.set({ seenJobUrls: [...seen] })
+      console.log(`[JobApplier] Synced ${urls.length} seen job URLs from Sheets`)
+      return
+    } catch {
+      // Server not ready yet — retry
+    }
   }
+  console.warn('[JobApplier] Sheets server not available on startup — using local seen-job cache only')
 })()
 
 // requestId → tabId: tracks which content tab is waiting for an overlay answer

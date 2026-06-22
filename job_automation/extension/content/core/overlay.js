@@ -72,12 +72,13 @@ const overlayManager = (() => {
         payload: { requestId, question, fieldContext },
       });
 
-      // Auto-skip after 3 s if the control panel receives no response
+      // Auto-skip after 2 minutes if the user doesn't respond in the control panel.
+      // Must be long enough for Claude API to respond AND the user to review + click Use.
       const timeoutId = setTimeout(() => {
         chrome.runtime.onMessage.removeListener(handler);
         hideToast();
         resolve({ accepted: false, value: '' });
-      }, 3000);
+      }, 120000);
 
       function handler(msg) {
         if (msg.type === MSG.OVERLAY_ANSWER && msg.payload?.requestId === requestId) {

@@ -178,20 +178,19 @@ async function appendRow(entry) {
 
 async function getSeenUrls() {
   const token = await getAccessToken()
-  // Pull LinkedIn URLs from both tabs to avoid reprocessing
-  const results = await Promise.all([PASSED_SHEET, FAILED_SHEET].map(sheet =>
+  // Passed: LinkedIn URL is col F. Failed: LinkedIn URL is col D. Fetch both in parallel.
+  const [passedResp, failedResp] = await Promise.all([
     fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${_spreadsheetId}/values/${sheet}!F2:F`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${_spreadsheetId}/values/${PASSED_SHEET}!F2:F`,
       { headers: { Authorization: `Bearer ${token}` } }
-    ).then(r => r.json()).catch(() => ({ values: [] }))
-  ))
-  // Passed: URL is col F (index 5). Failed: URL is col D (index 3).
-  const passedUrls = (results[0].values || []).flat().filter(Boolean)
-  const failedResp = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${_spreadsheetId}/values/${FAILED_SHEET}!D2:D`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  ).then(r => r.json()).catch(() => ({ values: [] }))
-  const failedUrls = (failedResp.values || []).flat().filter(Boolean)
+    ).then(r => r.json()).catch(() => ({ values: [] })),
+    fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${_spreadsheetId}/values/${FAILED_SHEET}!D2:D`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    ).then(r => r.json()).catch(() => ({ values: [] })),
+  ])
+  const passedUrls = (passedResp.values || []).flat().filter(Boolean)
+  const failedUrls = (failedResp.values  || []).flat().filter(Boolean)
   return [...new Set([...passedUrls, ...failedUrls])]
 }
 

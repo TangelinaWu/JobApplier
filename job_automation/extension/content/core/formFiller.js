@@ -347,7 +347,8 @@ const formFiller = {
 
   // Fill a single visible form field.
   // Returns: "filled" | "skipped" | "unknown" (unknown = needs Claude overlay)
-  async fillField(element, profile) {
+  // answers: pre-loaded answers DB entries (from getAnswers()) — avoids redundant Claude calls
+  async fillField(element, profile, answers) {
     const type = this.classifyElement(element);
     if (type === "hidden" || type === "button" || type === "unknown") return "skipped";
 
@@ -363,8 +364,6 @@ const formFiller = {
       }
     }
 
-    const profileValue = lookupProfileValue(labelText, profile);
-
     if (type === "file") {
       // Treat as resume if: label matches, accept includes pdf, or it's the only file input on the form.
       const container = element.closest('form') || document;
@@ -378,11 +377,44 @@ const formFiller = {
       return "skipped";
     }
 
-    if (profileValue === "") {
-      return "skipped"; // Profile has this field but no value — leave it blank
+    // Check answers DB first — if Claude already answered this question, reuse it
+    const savedAnswer = lookupFromAnswers(labelText, answers || []);
+    if (savedAnswer !== null) {
+      await humanDelay.short();
+      if (type === "select") {
+        const filled = this.fillSelect(element, savedAnswer);
+        return filled ? "filled" : "unknown";
+      }
+      if (type === "radio") {
+        const fieldset = element.closest("fieldset");
+        const radios = fieldset
+          ? fieldset.querySelectorAll('input[type="radio"]')
+          : document.querySelectorAll(`input[type="radio"][name="${element.name}"]`);
+        const filled = this.fillRadioGroup(radios, savedAnswer);
+        return filled ? "filled" : "unknown";
+      }
+      if (type === "checkbox") { this.fillCheckbox(element, savedAnswer); return "filled"; }
+      if (type === "combobox") {
+        const filled = await this.fillCombobox(element, savedAnswer);
+        return filled ? "filled" : "unknown";
+      }
+      if (type === "text" || type === "textarea" || type === "richtext") {
+        this.setInputValue(element, savedAnswer);
+        return "filled";
+      }
     }
+
+    const profileValue = lookupProfileValue(labelText, profile);
+
     if (profileValue === null) {
       return "unknown"; // Unrecognized label — ask the overlay
+    }
+
+    // Empty profile value: for free-text fields, let Claude provide a value rather
+    // than silently skipping — catches fields whose profile key exists but was never filled.
+    if (profileValue === "") {
+      if (type === "text" || type === "textarea" || type === "richtext") return "unknown";
+      return "skipped";
     }
 
     await humanDelay.short();
@@ -461,6 +493,10 @@ const formFiller = {
     }
     this._unknownMarked = [];
 
+    // Load answers DB once for this fill session so saved Claude answers are reused
+    // without redundant overlay calls.
+    const answers = (typeof getAnswers === 'function') ? await getAnswers() : [];
+
     const results = [];
 
     // Gather all interactive elements, deduplicate radio groups by name
@@ -485,7 +521,7 @@ const formFiller = {
 
     for (const el of elements) {
       const labelText = this.getLabelText(el);
-      let status = await this.fillField(el, profile);
+      let status = await this.fillField(el, profile, answers);
 
       const wasUnknown = status === "unknown";
       if (status === "unknown" && typeof onUnknown === "function") {
